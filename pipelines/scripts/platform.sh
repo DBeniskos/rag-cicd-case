@@ -62,6 +62,8 @@ ci_role="$(terraform -chdir="$PLATFORM_DIR" output -raw ci_role_arn)"
 release_role="$(terraform -chdir="$PLATFORM_DIR" output -raw release_role_arn)"
 deploy_role="$(terraform -chdir="$PLATFORM_DIR" output -raw deployment_role_arn)"
 registry="$(terraform -chdir="$PLATFORM_DIR" output -raw ecr_registry)"
+# CI cannot read infra/backend.hcl (gitignored), so it rebuilds the backend config from variables.
+state_bucket="$(grep -E '^bucket' "$BACKEND_FILE" | cut -d'"' -f2)"
 
 cat <<EOF
 
@@ -74,6 +76,7 @@ repository settings rather than in committed YAML.
   AWS_RELEASE_ROLE_ARN  $release_role
   AWS_DEPLOY_ROLE_ARN   $deploy_role
   ECR_REGISTRY          $registry
+  TF_STATE_BUCKET       $state_bucket
 
 With the GitHub CLI:
 
@@ -82,6 +85,7 @@ With the GitHub CLI:
   gh variable set AWS_RELEASE_ROLE_ARN --body "$release_role"
   gh variable set AWS_DEPLOY_ROLE_ARN  --body "$deploy_role"
   gh variable set ECR_REGISTRY         --body "$registry"
+  gh variable set TF_STATE_BUCKET      --body "$state_bucket"
 
 Also create the GitHub environments 'dev' and 'prod' (Settings -> Environments). The deploy role
 trusts the environment claim, so deploys fail closed until they exist — and 'prod' is where the
