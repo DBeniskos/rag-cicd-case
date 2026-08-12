@@ -1,0 +1,14 @@
+# Shell scripts are executed by CI runners (Linux) and Git Bash on Windows.
+# CRLF in a shebang line breaks them, so force LF regardless of core.autocrlf.
+*.sh   text eol=lf
+*.bash text eol=lf
+Makefile text eol=lf
+*.tf   text eol=lf
+*.py   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.zip  binary

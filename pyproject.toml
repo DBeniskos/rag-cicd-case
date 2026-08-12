@@ -1,0 +1,51 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app/api/src", "app/ingest/src", "app/shared", "eval"]
+extend-exclude = [".venv", "infra"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # import sorting
+  "N",        # pep8-naming
+  "UP",       # pyupgrade
+  "B",        # bugbear
+  "A",        # shadowed builtins
+  "C4",       # comprehensions
+  "S",        # bandit — security
+  "T20",      # no stray print()
+  "SIM",      # simplify
+  "PTH",      # pathlib over os.path
+  "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, hardcode fake creds, and print nothing of consequence.
+"**/tests/**" = ["S101", "S105", "S106"]
+# The eval harness is an operator tool: printing a report is the point.
+"eval/**" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rag_api", "rag_ingest", "rag_shared"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+pythonpath = ["app/api/src", "app/ingest/src", "app/shared"]
+testpaths = ["app/api/tests", "app/shared/tests"]
+addopts = "-q --strict-markers --cov --cov-report=term-missing --cov-report=xml"
+markers = ["integration: hits real AWS; excluded from the PR gate"]
+
+[tool.coverage.run]
+source = ["app/api/src", "app/ingest/src", "app/shared/rag_shared"]
+branch = true
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+# The PR gate fails below this. Raise it as coverage grows; never lower it to go green.
+fail_under = 80
+show_missing = true

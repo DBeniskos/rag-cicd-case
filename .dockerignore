@@ -1,0 +1,38 @@
+# The build context is the repo root (the images need app/shared), so this file is what stops
+# state files, credentials and local tooling from being sent to the daemon or landing in a layer.
+
+.git/
+.github/
+.devcontainer/
+.venv/
+venv/
+
+# IaC — never belongs in an application image, and state files can carry secrets.
+infra/
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+**/*.tfplan
+
+# Credentials and local overrides.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/.aws/
+
+# Not needed at runtime.
+docs/
+eval/
+pipelines/
+**/tests/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+.coverage
+coverage.xml
+*.md
+Makefile
