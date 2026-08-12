@@ -33,6 +33,22 @@ fi
 printf '%s' "$GH_REPO" | grep -Eq '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' \
   || die "GITHUB_REPOSITORY must be exactly owner/repo, got '$GH_REPO'"
 
+# GitHub's OIDC subject claim embeds numeric owner and repository ids. Looking them up here keeps
+# the trust policy pinned to the identity rather than the name, and spares anyone reusing this
+# repo from finding the ids by hand.
+OWNER_ID="${GITHUB_OWNER_ID:-}"
+REPO_ID="${GITHUB_REPOSITORY_ID:-}"
+if [ -z "$OWNER_ID" ] || [ -z "$REPO_ID" ]; then
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    OWNER_ID="$(gh api "users/${GH_REPO%%/*}" --jq .id 2>/dev/null || true)"
+    REPO_ID="$(gh api "repos/${GH_REPO}" --jq .id 2>/dev/null || true)"
+  fi
+fi
+if [ -z "$OWNER_ID" ] || [ -z "$REPO_ID" ]; then
+  printf 'warning: could not resolve GitHub numeric ids; falling back to name-based claims.\n' >&2
+  printf '         If OIDC fails with AccessDenied, set GITHUB_OWNER_ID and GITHUB_REPOSITORY_ID.\n' >&2
+fi
+
 cat <<EOF
 
 Platform — GitHub OIDC provider, pipeline roles, ECR.
@@ -40,6 +56,7 @@ Platform — GitHub OIDC provider, pipeline roles, ECR.
   account    : $account_id
   region     : $REGION
   repository : $GH_REPO   (only this repo may assume the roles)
+  subject    : ${OWNER_ID:+immutable ids ${OWNER_ID}/${REPO_ID}}${OWNER_ID:-name-based claim}
 
 EOF
 
@@ -56,7 +73,9 @@ terraform -chdir="$PLATFORM_DIR" init -input=false -backend-config="$BACKEND_FIL
 terraform -chdir="$PLATFORM_DIR" apply -input=false -auto-approve \
   -var "project=$PROJECT" \
   -var "region=$REGION" \
-  -var "github_repository=$GH_REPO"
+  -var "github_repository=$GH_REPO" \
+  -var "github_owner_id=$OWNER_ID" \
+  -var "github_repository_id=$REPO_ID"
 
 ci_role="$(terraform -chdir="$PLATFORM_DIR" output -raw ci_role_arn)"
 release_role="$(terraform -chdir="$PLATFORM_DIR" output -raw release_role_arn)"

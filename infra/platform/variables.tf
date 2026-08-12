@@ -22,6 +22,23 @@ variable "github_repository" {
   }
 }
 
+# GitHub now issues immutable subject claims that embed numeric ids:
+#   repo:owner@156813366/repo@1332120918:ref:refs/heads/main
+# Supplying the ids pins trust to the identity rather than the name, so deleting and recreating a
+# repository with the same name no longer satisfies the policy. Discovered automatically by
+# pipelines/scripts/platform.sh.
+variable "github_owner_id" {
+  description = "Numeric GitHub owner id. Empty falls back to the older name-based subject claim."
+  type        = string
+  default     = ""
+}
+
+variable "github_repository_id" {
+  description = "Numeric GitHub repository id. Empty falls back to the older name-based claim."
+  type        = string
+  default     = ""
+}
+
 variable "protected_prod_ref" {
   description = "Git ref permitted to deploy to prod."
   type        = string
