@@ -1,0 +1,165 @@
+name: ci
+
+# The PR gate. Split into an application leg and an infrastructure leg because they fail for
+# unrelated reasons and are owned by different people — a Terraform formatting error should not
+# be buried under a Python test report.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push makes the previous run irrelevant. Cancelling keeps feedback fast and the minutes
+# bill small.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  TERRAFORM_VERSION: "1.15.8"
+
+jobs:
+  app:
+    name: app · lint, test, image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            app/api/requirements.txt
+
+      - name: Install dependencies
+        run: pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check --output-format=github .
+
+      - name: Format check
+        run: black --check --diff .
+
+      # Coverage threshold lives in pyproject.toml so it is identical locally and here.
+      - name: Test
+        run: pytest
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: app/api/Dockerfile
+
+      # Built but never pushed: CI proves the image assembles, release.yml is the only thing that
+      # publishes an artifact.
+      - name: Build image
+        run: docker build -f app/api/Dockerfile -t rag-api:${{ github.sha }} .
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: rag-api:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          # Unfixed base-image CVEs would fail every build with no action available. Fixable ones
+          # are the signal worth blocking on.
+          ignore-unfixed: true
+
+  infra:
+    name: infra · fmt, validate, plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for the read-only CI role
+      pull-requests: write # to post the plan
+    strategy:
+      fail-fast: false
+      matrix:
+        # envs/dev and envs/prod join this list when those compositions exist.
+        layer: [platform]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive -diff infra/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # infra/backend.hcl is gitignored because it names the account, so the backend is rebuilt
+      # here from repository variables.
+      - name: Init
+        working-directory: infra/${{ matrix.layer }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Validate
+        working-directory: infra/${{ matrix.layer }}
+        run: terraform validate
+
+      - name: Plan
+        working-directory: infra/${{ matrix.layer }}
+        # `shell: bash` selects pipefail; without it the pipe to tee would swallow a plan failure
+        # and report the job green.
+        shell: bash
+        env:
+          TF_VAR_github_repository: ${{ github.repository }}
+        run: terraform plan -input=false -no-color -lock=false | tee plan.txt
+
+      # A plan nobody reads is not a review step, so it is posted where the review happens.
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          LAYER: ${{ matrix.layer }}
+        with:
+          script: |
+            const fs = require('fs');
+            const raw = fs.readFileSync('infra/${{ matrix.layer }}/plan.txt', 'utf8');
+            const body = [
+              `### Terraform plan — \`${process.env.LAYER}\``,
+              '<details><summary>Show plan</summary>',
+              '',
+              '```terraform',
+              raw.length > 60000 ? raw.slice(-60000) : raw,
+              '```',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
+
+  codeql:
+    name: security · codeql
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
