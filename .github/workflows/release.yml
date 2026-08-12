@@ -1,0 +1,131 @@
+name: release
+
+# Builds and publishes a versioned image. It deploys nothing.
+#
+# Release and deploy are separate on purpose: an artifact is built once, then the same digest is
+# promoted through dev and prod. If release also deployed, "what is in prod?" would be answerable
+# only by rebuilding, and dev and prod could silently diverge.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver release tag, e.g. v0.1.0"
+        required: true
+        type: string
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# A release must never be cancelled halfway through pushing layers.
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build and push · ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: true
+      matrix:
+        # ingest joins this list once app/ingest exists; its ECR repository is already provisioned.
+        component: [api]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          version="${{ github.event_name == 'push' && github.ref_name || inputs.version }}"
+          if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must be vMAJOR.MINOR.PATCH, got '$version'"
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "sha=$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ECR tags are immutable, so a duplicate push fails deep inside the layer upload with an
+      # unhelpful error. Checking first turns that into a clear message.
+      - name: Reject a version that already exists
+        shell: bash
+        run: |
+          if aws ecr describe-images \
+              --repository-name "rag-${{ matrix.component }}" \
+              --image-ids "imageTag=${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::${{ steps.v.outputs.version }} already published — bump the version"
+            exit 1
+          fi
+
+      - name: Build
+        shell: bash
+        env:
+          IMAGE: ${{ vars.ECR_REGISTRY }}/rag-${{ matrix.component }}
+        run: |
+          docker build \
+            -f "app/${{ matrix.component }}/Dockerfile" \
+            --build-arg "RELEASE_VERSION=${{ steps.v.outputs.version }}" \
+            --build-arg "GIT_SHA=${{ steps.v.outputs.sha }}" \
+            -t "$IMAGE:${{ steps.v.outputs.version }}" \
+            -t "$IMAGE:sha-${{ steps.v.outputs.sha }}" \
+            .
+
+      # The last gate before bytes become releasable. CI scanned the same source, but a release is
+      # the artifact that reaches production, so it is scanned again rather than assumed.
+      - name: Scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ vars.ECR_REGISTRY }}/rag-${{ matrix.component }}:${{ steps.v.outputs.version }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Push
+        shell: bash
+        env:
+          IMAGE: ${{ vars.ECR_REGISTRY }}/rag-${{ matrix.component }}
+        run: |
+          docker push "$IMAGE:${{ steps.v.outputs.version }}"
+          docker push "$IMAGE:sha-${{ steps.v.outputs.sha }}"
+
+      # The digest is what deploy.yml pins. A tag says what someone intended; a digest says what
+      # actually shipped.
+      - name: Record digest
+        id: digest
+        shell: bash
+        run: |
+          digest="$(aws ecr describe-images \
+            --repository-name "rag-${{ matrix.component }}" \
+            --image-ids "imageTag=${{ steps.v.outputs.version }}" \
+            --query 'imageDetails[0].imageDigest' --output text)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Released \`rag-${{ matrix.component }}\` ${{ steps.v.outputs.version }}"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| version | \`${{ steps.v.outputs.version }}\` |"
+            echo "| commit | \`${{ steps.v.outputs.sha }}\` |"
+            echo "| digest | \`$digest\` |"
+            echo ""
+            echo "Deploy with **deploy.yml**, selecting this version and a target environment."
+          } >> "$GITHUB_STEP_SUMMARY"
