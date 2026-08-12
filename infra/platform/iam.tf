@@ -11,6 +11,17 @@ data "aws_caller_identity" "current" {}
 locals {
   oidc_host    = "token.actions.githubusercontent.com"
   state_bucket = "${var.project}-tfstate-${data.aws_caller_identity.current.account_id}"
+
+  github_owner = split("/", var.github_repository)[0]
+  github_repo  = split("/", var.github_repository)[1]
+
+  # Prefer the immutable claim. Names can be released and re-registered by someone else; the
+  # numeric ids cannot.
+  subject_prefix = (
+    var.github_owner_id != "" && var.github_repository_id != ""
+    ? "repo:${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repository_id}"
+    : "repo:${var.github_repository}"
+  )
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -27,16 +38,16 @@ resource "aws_iam_openid_connect_provider" "github" {
 data "aws_iam_policy_document" "assume_role" {
   for_each = {
     ci = [
-      "repo:${var.github_repository}:pull_request",
-      "repo:${var.github_repository}:ref:${var.protected_prod_ref}",
+      "${local.subject_prefix}:pull_request",
+      "${local.subject_prefix}:ref:${var.protected_prod_ref}",
     ]
     release = [
-      "repo:${var.github_repository}:ref:${var.protected_prod_ref}",
-      "repo:${var.github_repository}:ref:refs/tags/v*",
+      "${local.subject_prefix}:ref:${var.protected_prod_ref}",
+      "${local.subject_prefix}:ref:refs/tags/v*",
     ]
     deployment = [
-      "repo:${var.github_repository}:environment:dev",
-      "repo:${var.github_repository}:environment:prod",
+      "${local.subject_prefix}:environment:dev",
+      "${local.subject_prefix}:environment:prod",
     ]
   }
 
