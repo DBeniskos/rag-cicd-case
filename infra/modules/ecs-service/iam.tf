@@ -47,8 +47,18 @@ resource "aws_iam_role" "task" {
   assume_role_policy = data.aws_iam_policy_document.assume_tasks.json
 }
 
+locals {
+  # Newer Anthropic models are only reachable through a cross-region inference profile, never the
+  # bare foundation-model id. Invoking one requires permission on the profile *and* on the
+  # underlying model in every region the profile may route to, so the base id is derived here
+  # rather than widening the policy to all Bedrock models.
+  text_base_model    = replace(var.text_model_id, "/^(us|eu|apac|global)\\./", "")
+  inference_regions  = ["us-east-1", "us-east-2", "us-west-2"]
+  text_model_targets = [for r in local.inference_regions : "arn:aws:bedrock:${r}::foundation-model/${local.text_base_model}"]
+}
+
 data "aws_iam_policy_document" "task" {
-  # The AI-specific control. Scoping to two model ARNs means a compromised task cannot reach for a
+  # The AI-specific control. Scoping to named models means a compromised task cannot reach for a
   # frontier model at 50x the price, and a typo in a model id fails loudly instead of quietly
   # changing the bill. This is the difference between "can call Bedrock" and "can call these two
   # models".
@@ -59,10 +69,13 @@ data "aws_iam_policy_document" "task" {
       "bedrock:InvokeModel",
       "bedrock:InvokeModelWithResponseStream",
     ]
-    resources = [
-      "arn:aws:bedrock:${var.region}::foundation-model/${var.embed_model_id}",
-      "arn:aws:bedrock:${var.region}::foundation-model/${var.text_model_id}",
-    ]
+    resources = concat(
+      [
+        "arn:aws:bedrock:${var.region}::foundation-model/${var.embed_model_id}",
+        "arn:aws:bedrock:${var.region}:${var.account_id}:inference-profile/${var.text_model_id}",
+      ],
+      local.text_model_targets,
+    )
   }
 
   # Read-only on the index: the API serves an index, it never publishes one. Publishing belongs to

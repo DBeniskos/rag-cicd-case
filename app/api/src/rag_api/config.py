@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     active_index_parameter: str = ""
 
     embed_model_id: str = "amazon.titan-embed-text-v2:0"
-    text_model_id: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
+    # Inference profile rather than a bare model id: newer Anthropic models are only invokable
+    # through one, and the profile is what routes the call across regions.
+    text_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     top_k: int = Field(default=4, ge=1, le=20)
     # Caps the blast radius of a runaway prompt on the bill, not just on latency.

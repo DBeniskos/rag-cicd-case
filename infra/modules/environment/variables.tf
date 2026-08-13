@@ -106,8 +106,9 @@ variable "embed_model_id" {
 }
 
 variable "text_model_id" {
-  type    = string
-  default = "anthropic.claude-3-5-haiku-20241022-v1:0"
+  description = "Cross-region inference profile id for generation."
+  type        = string
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
 variable "max_output_tokens" {
