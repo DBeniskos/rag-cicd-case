@@ -113,9 +113,14 @@ deployment path is reachable only from CI, which is what makes an incident at 2a
 | Git Bash / WSL | — | running `pipelines/scripts/*.sh` on Windows |
 
 One AWS account and **Bedrock model access enabled in `us-east-1`** for
-`amazon.titan-embed-text-v2:0` and `anthropic.claude-3-5-haiku-20241022-v1:0`
+`amazon.titan-embed-text-v2:0` and Anthropic Claude Haiku
 (Bedrock console → *Model access* → *Enable specific models*). Model access is granted per account
 and per region, so it is requested once here.
+
+> Newer Anthropic models cannot be invoked by their bare foundation-model id — they are reachable
+> only through a cross-region **inference profile** such as
+> `us.anthropic.claude-haiku-4-5-20251001-v1:0`. Confirm what your account offers with
+> `aws bedrock list-inference-profiles`, since availability differs by account and region.
 
 > Use a personal AWS account. Nothing in this repo should ever run against a corporate account.
 

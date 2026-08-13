@@ -26,7 +26,7 @@ def test_version_reports_what_is_running(make_client):
     assert body["git_sha"] == "abc1234"
     assert body["index_version"] == "none"
     assert body["embed_model_id"] == "amazon.titan-embed-text-v2:0"
-    assert body["text_model_id"] == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert body["text_model_id"] == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 
 def test_request_id_is_echoed_back(make_client):
