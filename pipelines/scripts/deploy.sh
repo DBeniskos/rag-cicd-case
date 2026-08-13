@@ -27,25 +27,31 @@ ENV_DIR="$REPO_ROOT/infra/envs/$ENV_PATH"
 account_id="$(aws sts get-caller-identity --query Account --output text)" || die "no AWS credentials"
 registry="${account_id}.dkr.ecr.${REGION}.amazonaws.com"
 
-# Resolve the tag to a digest and deploy that. A tag records what someone intended; a digest
+# Resolve each tag to a digest and deploy that. A tag records what someone intended; a digest
 # records which bytes ran. Promoting by digest is what makes "dev and prod are identical" a fact
-# rather than a hope.
-digest="$(aws ecr describe-images \
-  --repository-name "${PROJECT}-api" \
-  --image-ids "imageTag=${VERSION}" \
-  --query 'imageDetails[0].imageDigest' \
-  --output text 2>/dev/null)" || die "release $VERSION not found in ECR — run release.yml first"
+# rather than a hope. Both components are resolved from the same version so the API and the job
+# that builds its index are always from one commit.
+resolve_digest() {
+  local repo="$1" digest
+  digest="$(aws ecr describe-images \
+    --repository-name "$repo" \
+    --image-ids "imageTag=${VERSION}" \
+    --query 'imageDetails[0].imageDigest' \
+    --output text 2>/dev/null)" || die "release $VERSION not found in $repo — run release.yml first"
+  [ -n "$digest" ] && [ "$digest" != "None" ] || die "could not resolve a digest for $repo:$VERSION"
+  printf '%s' "$digest"
+}
 
-[ -n "$digest" ] && [ "$digest" != "None" ] || die "could not resolve a digest for $VERSION"
-
-image="${registry}/${PROJECT}-api@${digest}"
+api_image="${registry}/${PROJECT}-api@$(resolve_digest "${PROJECT}-api")"
+ingest_image="${registry}/${PROJECT}-ingest@$(resolve_digest "${PROJECT}-ingest")"
 git_sha="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
-printf 'deploy: %s -> %s\n  image  %s\n' "$VERSION" "$ENV_PATH" "$image"
+printf 'deploy: %s -> %s\n  api    %s\n  ingest %s\n' "$VERSION" "$ENV_PATH" "$api_image" "$ingest_image"
 
 terraform -chdir="$ENV_DIR" init -input=false -reconfigure -backend-config="$BACKEND_FILE"
 terraform -chdir="$ENV_DIR" apply -input=false -auto-approve \
-  -var "image=$image" \
+  -var "image=$api_image" \
+  -var "ingest_image=$ingest_image" \
   -var "release_version=$VERSION" \
   -var "git_sha=$git_sha"
 
@@ -70,7 +76,7 @@ if [ "$controller" = "ECS" ]; then
     || die "service did not stabilise — the circuit breaker should have rolled it back; check the events"
 else
   printf 'deploy: blue/green via CodeDeploy — canary, then alarm-gated shift\n'
-  bash "$REPO_ROOT/pipelines/scripts/codedeploy_release.sh" "$ENV_DIR" "$image"
+  bash "$REPO_ROOT/pipelines/scripts/codedeploy_release.sh" "$ENV_DIR" "$api_image"
 fi
 
 bash "$REPO_ROOT/pipelines/scripts/smoke.sh" "$api_url" "$VERSION"

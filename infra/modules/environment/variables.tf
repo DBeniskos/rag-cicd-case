@@ -39,9 +39,17 @@ variable "image" {
 }
 
 variable "ingest_image" {
-  description = "Ingest image. Defaults to the API image so a first apply works before ingest ships."
+  description = <<-EOT
+    Ingest image reference. Deliberately has no default and no fallback to the API image: an
+    earlier version fell back, so the one-off ingestion task started a web server and ran forever
+    instead of failing. A wrong value must break the plan, not the runtime.
+  EOT
   type        = string
-  default     = ""
+
+  validation {
+    condition     = can(regex("rag-ingest[@:]", var.ingest_image))
+    error_message = "ingest_image must reference the rag-ingest repository, not another image."
+  }
 }
 
 variable "corpus_key" {

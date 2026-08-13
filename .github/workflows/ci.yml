@@ -126,6 +126,7 @@ jobs:
           # Environment layers require an image. A plan only needs the value to be well-formed;
           # deploy.yml supplies the real digest.
           TF_VAR_image: ${{ vars.ECR_REGISTRY }}/rag-api:plan-placeholder
+          TF_VAR_ingest_image: ${{ vars.ECR_REGISTRY }}/rag-ingest:plan-placeholder
         run: terraform plan -input=false -no-color -lock=false | tee plan.txt
 
       # A plan nobody reads is not a review step, so it is posted where the review happens.

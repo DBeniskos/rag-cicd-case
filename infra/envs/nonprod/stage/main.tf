@@ -36,6 +36,11 @@ variable "image" {
   type        = string
 }
 
+variable "ingest_image" {
+  description = "Set by deploy.yml to the rag-ingest digest for the same release."
+  type        = string
+}
+
 variable "release_version" {
   type    = string
   default = "0.0.0-dev"
@@ -62,6 +67,7 @@ module "environment" {
   cidr_block  = "10.21.0.0/16"
 
   image                = var.image
+  ingest_image         = var.ingest_image
   release_version      = var.release_version
   git_sha              = var.git_sha
   active_index_version = var.active_index_version
