@@ -1,7 +1,6 @@
 """Entrypoint for the ingestion task.
 
-Downloads the corpus, builds one index version, and writes that version to stdout so the calling
-pipeline can capture it. Promotion is a separate, gated step.
+Builds one index version and writes it to stdout for the calling pipeline. Promotion is separate.
 """
 
 from __future__ import annotations
@@ -43,8 +42,7 @@ def main() -> int:
     try:
         version = run(settings)
     except (CorpusError, EmbeddingError) as exc:
-        # These mean the inputs are wrong, not that the run was unlucky. Retrying would waste
-        # Bedrock spend to reach the same conclusion.
+        # Bad inputs fail identically on retry, so retrying only spends Bedrock budget.
         log.error("ingest.failed", error=str(exc), error_type=type(exc).__name__)
         return 1
 

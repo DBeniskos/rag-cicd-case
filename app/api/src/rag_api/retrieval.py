@@ -1,12 +1,9 @@
-"""Retrieval: loading the promoted index and querying it.
+"""Loading the promoted index and querying it.
 
-Swapping LanceDB-on-S3 for OpenSearch Serverless or pgvector means a new class in this module and
-one line in ``build_retriever`` — the module boundary is the seam, which is why the trade-off is
-written down in an ADR rather than hard-coded as the winner.
-
-The index is copied to local disk at startup rather than queried over S3. That trades a slower
-start for predictable query latency (the p95 release gate measures the query path, not S3), and it
-puts manifest validation before the task ever reports healthy.
+The index is copied to local disk at startup rather than queried over S3: predictable query
+latency, and manifest validation happens before the task reports healthy. Swapping the store for
+OpenSearch or pgvector is a new class here plus one line in build_retriever — see
+docs/adr/0001-vector-store.md.
 """
 
 from __future__ import annotations
@@ -33,20 +30,17 @@ class IndexUnavailableError(RuntimeError):
 
 
 class EmbeddingModelMismatchError(RuntimeError):
-    """The index was built with a different embedding model than the one this service queries with.
+    """Index and service use different embedding models, so retrieval would return nonsense.
 
-    Fatal on purpose: vectors from two different embedding models share a space only by accident,
-    so retrieval would silently return plausible nonsense. Failing to start turns a silent quality
-    incident into a loud deployment failure that the circuit breaker rolls back.
+    Fatal on purpose: failing to start turns a silent quality incident into a loud rollback.
     """
 
 
 class LanceRetriever:
     """Queries a local LanceDB table with a Bedrock-embedded question.
 
-    At this corpus size LanceDB scans exhaustively, which is exact and fast enough. An ANN index
-    becomes worthwhile in the tens of thousands of vectors; adding one before then would trade
-    recall for a speed-up nobody needs.
+    LanceDB scans exhaustively at this corpus size. An ANN index only earns its recall cost in the
+    tens of thousands of vectors.
     """
 
     def __init__(self, table: Any, embedder: BedrockEmbedder, manifest: IndexManifest) -> None:
@@ -104,11 +98,10 @@ def download_index(s3: Any, bucket: str, index_version: str, root: Path) -> Path
 
 
 def resolve_index_version(settings: Settings, ssm: Any) -> str:
-    """Determine which index this task should serve.
+    """The SSM parameter wins when configured, because that is what the promotion pipeline writes.
 
-    The SSM parameter wins when configured, because that is what the promotion pipeline writes.
-    A failure to read it is fatal rather than a silent fall back to the baked-in value: serving
-    the wrong index quietly is precisely the failure this design exists to prevent.
+    A read failure is fatal rather than a silent fall back: serving the wrong index quietly is the
+    failure this design exists to prevent.
     """
     if not settings.active_index_parameter:
         return settings.index_version
@@ -124,15 +117,10 @@ def resolve_index_version(settings: Settings, ssm: Any) -> str:
 
 
 def build_retriever(settings: Settings) -> LanceRetriever | None:
-    """Load the index this environment currently points at.
+    """Load the index this environment points at, or None if nothing is promoted yet.
 
-    Returns ``None`` when no index has been promoted yet. That is a normal state for a freshly
-    provisioned environment: the service starts, reports healthy to the load balancer, and refuses
-    ``/ask`` with a machine-readable error. Liveness and readiness are deliberately separate — an
-    unpromoted index must not deregister a task that is otherwise fine.
-
-    Every other failure raises, because a task that cannot serve its purpose should not report
-    healthy; ECS replaces it and the circuit breaker rolls the deployment back.
+    An unpromoted index is normal for a fresh environment: the service stays healthy and refuses
+    /ask. Every other failure raises, so ECS replaces the task and the deployment rolls back.
     """
     if not settings.index_bucket:
         log.warning("index.no_bucket_configured")

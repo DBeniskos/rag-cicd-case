@@ -1,7 +1,7 @@
 """Splitting documents into retrievable passages.
 
-Pure functions with no AWS or IO, because chunking is the part most likely to be tuned and the
-part where a regression is hardest to notice: bad chunks do not raise, they just retrieve worse.
+Pure functions, no IO. Bad chunks do not raise — they just retrieve worse — so this is the part
+that most needs to be testable in isolation.
 """
 
 from __future__ import annotations
@@ -11,8 +11,7 @@ from dataclasses import dataclass
 
 from rag_ingest.corpus import Document
 
-# Split after sentence-ending punctuation followed by whitespace. Deliberately simple — a full
-# sentence tokeniser would add a model download and a language assumption for marginal gain.
+# A full sentence tokeniser would add a model download and a language assumption for marginal gain.
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -31,9 +30,8 @@ def split_sentences(text: str) -> list[str]:
 def chunk_text(text: str, max_chars: int, overlap_chars: int) -> list[str]:
     """Pack sentences into chunks of at most ``max_chars``, repeating a tail for context.
 
-    The overlap exists so an answer spanning a chunk boundary is still retrievable from at least
-    one chunk. A sentence longer than ``max_chars`` is emitted whole rather than cut mid-word: an
-    oversized chunk retrieves fine, a truncated one can lose the answer entirely.
+    A sentence longer than ``max_chars`` is emitted whole: an oversized chunk retrieves fine, a
+    truncated one can lose the answer entirely.
     """
     sentences = split_sentences(text)
     if not sentences:

@@ -1,9 +1,7 @@
-"""Bedrock generation.
+"""Bedrock generation via the Converse API.
 
-Uses the Converse API rather than model-specific ``invoke_model`` payloads: swapping Nova Lite
-for Claude Haiku becomes a change to one Terraform variable and one IAM ARN, with no code change.
-That optionality is worth more here than the handful of model-specific parameters it gives up,
-and it was cashed in once already when Anthropic's per-account use case form blocked dev.
+Converse rather than model-specific invoke_model payloads: changing model is one Terraform
+variable and one IAM ARN. See docs/adr/0004-converse-api.md.
 """
 
 from __future__ import annotations
@@ -35,7 +33,7 @@ _THROTTLE_CODES = frozenset(
 
 
 class ModelThrottledError(RuntimeError):
-    """Bedrock rejected the call for rate or quota reasons — retryable, and a capacity signal."""
+    """Rate or quota rejection — retryable, and a capacity signal."""
 
 
 class ModelUnavailableError(RuntimeError):
@@ -69,8 +67,7 @@ class BedrockGenerator:
             config=BotoConfig(
                 connect_timeout=5,
                 read_timeout=settings.bedrock_timeout_seconds,
-                # Adaptive mode backs off on throttles instead of amplifying them, which matters
-                # on a shared per-account Bedrock quota.
+                # Adaptive backs off on throttles instead of amplifying them.
                 retries={"max_attempts": 3, "mode": "adaptive"},
             ),
         )
@@ -87,8 +84,7 @@ class BedrockGenerator:
                 inferenceConfig={
                     "maxTokens": self._max_output_tokens,
                     # Zero temperature keeps the eval gate a measurement rather than a coin flip.
-                    # topP is deliberately omitted: Anthropic models reject both sampling controls
-                    # in one request with a ValidationException.
+                    # topP is omitted: Anthropic rejects both sampling controls in one request.
                     "temperature": 0.0,
                 },
             )
@@ -98,7 +94,7 @@ class BedrockGenerator:
             if code in _THROTTLE_CODES:
                 log.warning("bedrock.throttled", model_id=self.model_id, error_code=code)
                 raise ModelThrottledError(code) from exc
-            # The provider's message is the only thing that distinguishes a bad parameter from a
+            # The provider's message is the only thing distinguishing a bad parameter from a
             # missing model, so it is logged even though it never reaches the caller.
             log.error(
                 "bedrock.client_error",

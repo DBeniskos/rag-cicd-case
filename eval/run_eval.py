@@ -2,15 +2,11 @@
 
     python eval/run_eval.py --base-url http://... --env nonprod/dev
 
-Runs against a *deployed* environment rather than an in-process app. The thing being gated is
-"this release, on this index, in this environment", and a harness that imports the app cannot see
-a stale index pointer, a missing IAM permission or a Bedrock quota.
+Runs against a deployed environment, not an in-process app: a harness that imports the app cannot
+see a stale index pointer, a missing IAM permission or a Bedrock quota. Gates both deploy.yml and
+index.yml, since either can regress answer quality.
 
-The same harness gates two independent pipelines: deploy.yml after a new service version is live,
-index.yml after a new index version is promoted. Either can regress answer quality.
-
-Stdlib only, on purpose — the gate runs in the release path, so it must not depend on a package
-install succeeding.
+Stdlib only — it runs in the release path, so it must not depend on a package install.
 
 Exit codes: 0 pass, 1 gate failed, 2 harness could not run.
 """
@@ -137,11 +133,7 @@ class Report:
 
 
 def _rate(flags: list[bool]) -> float:
-    """An empty denominator scores 0, never 1.
-
-    A harness that silently passes because it measured nothing is the failure mode that makes
-    quality gates worthless.
-    """
+    """An empty denominator scores 0, never 1 — a gate that measured nothing must not pass."""
     return sum(1 for f in flags if f) / len(flags) if flags else 0.0
 
 
@@ -226,8 +218,7 @@ def evaluate_case(base_url: str, case: Case, timeout: int) -> CaseResult:
     finally:
         result.latency_ms = int((time.monotonic() - started) * 1000)
 
-    # Prefer the server's own timing: it excludes jitter from a runner that may be on the other
-    # side of the internet.
+    # Prefer the server's own timing: it excludes network jitter from the runner.
     result.latency_ms = int(payload.get("latency_ms") or result.latency_ms)
     result.answer = payload.get("answer", "")
     result.titles = tuple(p.get("title", "") for p in payload.get("passages", []))
@@ -241,8 +232,7 @@ def evaluate_case(base_url: str, case: Case, timeout: int) -> CaseResult:
 
     result.recalled = case.expect_doc is not None and case.expect_doc in result.titles
     lowered = result.answer.lower()
-    # An expected term appearing inside the refusal string would score a refusal as a correct
-    # answer, so refusals never count as matches.
+    # A refusal containing an expected term would otherwise score as a correct answer.
     result.answer_matched = not result.refused and any(
         term.lower() in lowered for term in case.expect_any
     )

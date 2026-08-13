@@ -52,3 +52,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Case brief, kept locally rather than committed.
+DevOps_Infra_Level_Instructions.pdf

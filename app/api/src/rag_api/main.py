@@ -37,9 +37,8 @@ log = structlog.get_logger()
 # none of the signal.
 _HEALTH_PATH = "/healthz"
 
-# Each failure mode maps to the status code that tells a caller what to do about it: retry later,
-# retry elsewhere, or stop. The `code` is machine-readable so smoke tests can distinguish causes
-# rather than guessing from a status alone.
+# Each failure mode maps to the status code that tells a caller what to do about it. The `code` is
+# machine-readable so smoke tests can distinguish causes rather than guess from a status alone.
 _ERRORS: dict[type[Exception], tuple[int, str]] = {
     IndexUnavailableError: (503, "index_unavailable"),
     EmbeddingModelMismatchError: (503, "embedding_model_mismatch"),
@@ -54,24 +53,21 @@ router = APIRouter()
 async def healthz() -> HealthResponse:
     """Liveness only.
 
-    Deliberately touches neither the index nor Bedrock. If the health check called the model, a
-    Bedrock outage would fail every health check, drain every target and turn a degraded service
-    into no service. Index and answer quality are gated at release time, not per health poll.
+    Touches neither the index nor Bedrock: a health check that called the model would let a
+    Bedrock outage drain every target and turn a degraded service into no service.
     """
     return HealthResponse(status="ok")
 
 
 @router.get("/version", response_model=VersionResponse, tags=["ops"])
 async def version(request: Request) -> VersionResponse:
-    """What is actually running. The deploy pipeline asserts on this before shifting traffic."""
+    """Reports the index actually loaded, not the one configured. Asserted by the deploy."""
     settings: Settings = request.app.state.settings
     retriever = request.app.state.retriever
     return VersionResponse(
         env=settings.env,
         release=settings.release_version,
         git_sha=settings.git_sha,
-        # Read from the loaded index rather than from configuration, so this reports what is being
-        # served rather than what was requested.
         index_version=retriever.index_version if retriever is not None else NO_INDEX,
         embed_model_id=settings.embed_model_id,
         text_model_id=settings.text_model_id,
@@ -138,8 +134,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved
-        # A mismatch raises here, before the task reports healthy, so the deployment circuit
-        # breaker rolls it back instead of serving answers grounded in the wrong vector space.
+        # Raises before the task reports healthy, so a mismatch rolls the deployment back rather
+        # than serving answers grounded in the wrong vector space.
         app.state.retriever = build_retriever(resolved)
         app.state.generator = BedrockGenerator.from_settings(resolved)
         log.info(

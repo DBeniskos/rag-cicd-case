@@ -1,8 +1,7 @@
 """Build one immutable index version and publish it.
 
-The job deliberately stops short of making the new index live. Building and promoting are separate
-steps because promotion has to be gated on evaluation results, and because a promotion that is
-just a pointer flip can be reversed in seconds without rebuilding anything.
+Building stops short of making the index live: promotion is gated on evaluation, and a pointer
+flip reverses in seconds without rebuilding anything.
 """
 
 from __future__ import annotations
@@ -29,12 +28,7 @@ _VERSION_PREFIX = re.compile(r"^indexes/v(\d+)-")
 
 
 def next_index_version(s3: Any, bucket: str, git_sha: str) -> str:
-    """Allocate the next version number.
-
-    Derived from what is already published rather than from a counter held elsewhere, so there is
-    no second source of truth to drift. The git sha is appended to make the provenance of an index
-    readable straight from its name.
-    """
+    """Derived from what is already published, so there is no separate counter to drift."""
     highest = 0
     for page in s3.get_paginator("list_objects_v2").paginate(
         Bucket=bucket, Prefix="indexes/", Delimiter="/"
@@ -72,11 +66,7 @@ def write_table(
 
 
 def upload_directory(s3: Any, directory: Path, bucket: str, prefix: str) -> int:
-    """Publish the index, manifest last.
-
-    Ordering matters: a reader that finds the manifest can rely on the data already being there.
-    The reverse order would expose a window where an index looks published but is incomplete.
-    """
+    """Publish the index, manifest last, so a reader that finds it can rely on the data existing."""
     manifest = directory / MANIFEST_FILENAME
     payload = [p for p in sorted(directory.rglob("*")) if p.is_file() and p != manifest]
     payload.append(manifest)
