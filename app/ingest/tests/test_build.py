@@ -77,7 +77,7 @@ def test_write_table_rejects_mismatched_vector_count(tmp_path: Path) -> None:
     """Chunks and vectors are zipped by position; a length mismatch must not pass silently."""
     chunks = [Chunk(doc_id="d1", title="T", text="a", ordinal=0)]
 
-    with pytest.raises(ValueError, match="argument 2 is shorter|zip"):
+    with pytest.raises(ValueError, match=r"argument 2 is shorter|zip"):
         write_table(tmp_path, chunks, [], DIMENSIONS)
 
 

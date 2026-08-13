@@ -46,7 +46,9 @@ def next_index_version(s3: Any, bucket: str, git_sha: str) -> str:
     return f"v{highest + 1}-{git_sha}"
 
 
-def write_table(directory: Path, chunks: list[Chunk], vectors: list[list[float]], dims: int) -> None:
+def write_table(
+    directory: Path, chunks: list[Chunk], vectors: list[list[float]], dims: int
+) -> None:
     schema = pa.schema(
         [
             pa.field("doc_id", pa.string()),
