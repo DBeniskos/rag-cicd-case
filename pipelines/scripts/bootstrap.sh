@@ -91,6 +91,6 @@ Confirm the budget subscription email that AWS sends you, or the alerts go nowhe
 Next:
   1. Enable Bedrock model access in $REGION for:
        amazon.titan-embed-text-v2:0
-       anthropic.claude-3-5-haiku-20241022-v1:0
+       anthropic.claude-haiku-4-5  (invoked via the us.* cross-region inference profile)
   2. bash pipelines/scripts/platform.sh     # GitHub OIDC provider, pipeline roles, ECR
 EOF
