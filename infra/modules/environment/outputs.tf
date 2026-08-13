@@ -64,3 +64,20 @@ output "codedeploy_deployment_group_name" {
 output "rollback_alarm_names" {
   value = try(module.codedeploy[0].alarm_names, [])
 }
+
+output "ingest_task_family" {
+  value = module.ingest.task_definition_family
+}
+
+output "ingest_log_group_name" {
+  value = module.ingest.log_group_name
+}
+
+output "subnet_ids" {
+  description = "Needed by `aws ecs run-task` for the one-off ingestion job."
+  value       = module.network.public_subnet_ids
+}
+
+output "tasks_security_group_id" {
+  value = module.network.tasks_security_group_id
+}

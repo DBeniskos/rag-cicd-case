@@ -108,3 +108,15 @@ output "codedeploy_application_name" {
 output "codedeploy_deployment_group_name" {
   value = module.environment.codedeploy_deployment_group_name
 }
+
+output "ingest_task_family" {
+  value = module.environment.ingest_task_family
+}
+
+output "subnet_ids" {
+  value = module.environment.subnet_ids
+}
+
+output "tasks_security_group_id" {
+  value = module.environment.tasks_security_group_id
+}

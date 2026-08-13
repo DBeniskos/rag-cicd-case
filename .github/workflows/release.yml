@@ -34,8 +34,9 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        # ingest joins this list once app/ingest exists; its ECR repository is already provisioned.
-        component: [api]
+        # Both images are cut from the same commit at the same version, so an index and the API
+        # that serves it are always traceable to one revision.
+        component: [api, ingest]
 
     steps:
       - uses: actions/checkout@v4

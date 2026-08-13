@@ -1,0 +1,163 @@
+name: index
+
+# The index has its own release cycle, separate from the service.
+#
+# Build produces a new immutable version; promote flips a pointer. Keeping them separate is what
+# makes a bad index recoverable in seconds: the previous version is still sitting in S3, so
+# rollback is a write to one SSM parameter rather than a rebuild and a redeploy.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - nonprod/dev
+          - nonprod/stage
+          - prod
+      action:
+        description: "What to do"
+        required: true
+        type: choice
+        options:
+          - build-and-promote
+          - promote-existing
+          - rollback
+          - status
+      index_version:
+        description: "Index version, required for promote-existing"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: index-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  index:
+    name: index · ${{ inputs.action }} → ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Reconstruct backend config
+        shell: bash
+        run: |
+          cat > infra/backend.hcl <<EOF
+          bucket       = "${{ vars.TF_STATE_BUCKET }}"
+          region       = "${{ vars.AWS_REGION }}"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+
+      - name: Terraform init
+        shell: bash
+        run: terraform -chdir="infra/envs/${{ inputs.environment }}" init -input=false -reconfigure -backend-config="$PWD/infra/backend.hcl"
+
+      - name: Status
+        if: inputs.action == 'status'
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+        run: bash pipelines/scripts/promote_index.sh --status
+
+      # Runs the ingestion job as a one-off ECS task and waits for it. The task has its own role:
+      # the pipeline can start it, but only the task itself can write an index.
+      - name: Build a new index version
+        id: build
+        if: inputs.action == 'build-and-promote'
+        shell: bash
+        env:
+          ENV_DIR: infra/envs/${{ inputs.environment }}
+        run: |
+          cluster="$(terraform -chdir="$ENV_DIR" output -raw cluster_name)"
+          family="$(terraform -chdir="$ENV_DIR" output -raw ingest_task_family)"
+          subnets="$(terraform -chdir="$ENV_DIR" output -json subnet_ids | jq -r 'join(",")')"
+          sg="$(terraform -chdir="$ENV_DIR" output -raw tasks_security_group_id)"
+
+          task_arn="$(aws ecs run-task \
+            --cluster "$cluster" \
+            --task-definition "$family" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$subnets],securityGroups=[$sg],assignPublicIp=ENABLED}" \
+            --query 'tasks[0].taskArn' --output text)"
+
+          echo "ingest task: $task_arn"
+          aws ecs wait tasks-stopped --cluster "$cluster" --tasks "$task_arn"
+
+          exit_code="$(aws ecs describe-tasks --cluster "$cluster" --tasks "$task_arn" \
+            --query 'tasks[0].containers[0].exitCode' --output text)"
+          if [ "$exit_code" != "0" ]; then
+            echo "::error::ingestion task exited $exit_code — see the ingest log group"
+            exit 1
+          fi
+
+          # The job writes the version it published to stdout; the log stream is where the
+          # pipeline reads it back.
+          log_group="$(terraform -chdir="$ENV_DIR" output -raw ingest_log_group_name)"
+          stream="ingest/ingest/${task_arn##*/}"
+          version="$(aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$stream" \
+            --query 'events[].message' --output text | tr '\t' '\n' | grep -Eo '^v[0-9]+-[0-9a-f]+$' | tail -n1)"
+
+          [ -n "$version" ] || { echo "::error::could not determine the published index version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "built $version"
+
+      - name: Promote
+        if: inputs.action == 'build-and-promote' || inputs.action == 'promote-existing'
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+        run: |
+          version="${{ steps.build.outputs.version || inputs.index_version }}"
+          [ -n "$version" ] || { echo "::error::index_version is required for promote-existing"; exit 1; }
+          bash pipelines/scripts/promote_index.sh "$version"
+
+      - name: Rollback
+        if: inputs.action == 'rollback'
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+        run: bash pipelines/scripts/promote_index.sh --rollback
+
+      - name: Verify what is being served
+        if: inputs.action != 'status'
+        shell: bash
+        env:
+          ENV_DIR: infra/envs/${{ inputs.environment }}
+        run: |
+          api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url)"
+          bash pipelines/scripts/smoke.sh "$api_url"
+
+          {
+            echo "### Index ${{ inputs.action }} → \`${{ inputs.environment }}\`"
+            echo ""
+            echo '```json'
+            curl -fsS "$api_url/version"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -37,8 +37,10 @@ htmlcov/
 .env
 .env.*
 !.env.example
+# Real corpora are downloaded, not committed. The small sample fixture is the exception.
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/sample_movie_plots.csv
 data/index/
 artifacts/
 *.log
