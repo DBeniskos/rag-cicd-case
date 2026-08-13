@@ -36,7 +36,7 @@ target-version = ["py312"]
 
 [tool.pytest.ini_options]
 pythonpath = ["app/api/src", "app/ingest/src", "app/shared"]
-testpaths = ["app/api/tests", "app/shared/tests"]
+testpaths = ["app/api/tests", "app/shared/tests", "app/ingest/tests"]
 addopts = "-q --strict-markers --cov --cov-report=term-missing --cov-report=xml"
 markers = ["integration: hits real AWS; excluded from the PR gate"]
 

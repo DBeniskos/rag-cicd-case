@@ -1,0 +1,105 @@
+name: deploy
+
+# Selects an already-published release and puts it in one environment.
+#
+# It builds nothing. The image being deployed was produced by release.yml, and this workflow
+# resolves the tag to a digest so that promoting dev -> stage -> prod provably moves the same
+# bytes rather than rebuilding from the same source and hoping.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release to deploy, e.g. v0.1.0"
+        required: true
+        type: string
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - nonprod/dev
+          - nonprod/stage
+          - prod
+
+permissions:
+  contents: read
+
+# Two deployments to one environment at once would race on Terraform state and on the ECS service.
+# Different environments may proceed in parallel.
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy · ${{ inputs.version }} → ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    # The GitHub environment is not decoration: the deploy role's trust policy is scoped to the
+    # environment claim, so the approval gate on `prod` sits in front of the AWS credentials
+    # themselves, not merely in front of the job.
+    environment:
+      name: ${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
+      url: ${{ steps.deploy.outputs.api_url }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+          terraform_wrapper: false # the scripts read `terraform output -raw`
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # backend.hcl is gitignored because it names the account, so it is rebuilt from variables.
+      - name: Reconstruct backend config
+        shell: bash
+        run: |
+          cat > infra/backend.hcl <<EOF
+          bucket       = "${{ vars.TF_STATE_BUCKET }}"
+          region       = "${{ vars.AWS_REGION }}"
+          encrypt      = true
+          use_lockfile = true
+          EOF
+
+      - name: Deploy
+        id: deploy
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+          VERSION: ${{ inputs.version }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          bash pipelines/scripts/deploy.sh
+          api_url="$(terraform -chdir="infra/envs/${ENV}" output -raw api_url)"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        if: always()
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo "### Deploy \`${VERSION}\` → \`${ENV}\`"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| result | ${{ job.status }} |"
+            echo "| url | ${{ steps.deploy.outputs.api_url }} |"
+            echo ""
+            if [ "${{ job.status }}" != "success" ]; then
+              echo "The previous task set remains live. Nothing was promoted."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

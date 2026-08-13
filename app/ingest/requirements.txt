@@ -1,0 +1,6 @@
+boto3~=1.35
+pydantic~=2.9
+pydantic-settings~=2.6
+structlog~=24.4
+lancedb~=0.37
+pyarrow~=25.0

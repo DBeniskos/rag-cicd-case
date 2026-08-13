@@ -1,8 +1,9 @@
-"""Structured JSON logging.
+"""Structured JSON logging, shared by every component.
 
 Fargate ships stdout straight to CloudWatch Logs, so JSON on stdout is the cheapest path to
-queryable logs — no sidecar, no agent. Log Insights can then filter on ``request_id`` or
-``index_version`` without a regex.
+queryable logs — no sidecar, no agent. Sharing one configuration means a Log Insights query can
+filter on ``index_version`` across the API and the ingestion job without accounting for two
+different log shapes.
 """
 
 from __future__ import annotations
