@@ -14,7 +14,6 @@ from fastapi.responses import JSONResponse
 
 from rag_api.config import Settings, get_settings
 from rag_api.generation import ModelThrottledError, ModelUnavailableError, build_generator
-from rag_api.logging_config import configure_logging
 from rag_api.retrieval import (
     EmbeddingModelMismatchError,
     IndexUnavailableError,
@@ -27,6 +26,7 @@ from rag_api.schemas import (
     HealthResponse,
     VersionResponse,
 )
+from rag_shared.logging_config import configure_logging
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import AsyncIterator
