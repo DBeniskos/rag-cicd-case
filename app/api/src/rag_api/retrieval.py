@@ -19,6 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 import boto3
 import lancedb
 import structlog
+from botocore.exceptions import BotoCoreError, ClientError
 
 from rag_api.config import NO_INDEX, Settings
 from rag_api.schemas import Passage
@@ -114,6 +115,26 @@ def download_index(s3: Any, bucket: str, index_version: str, root: Path) -> Path
     return destination
 
 
+def resolve_index_version(settings: Settings, ssm: Any) -> str:
+    """Determine which index this task should serve.
+
+    The SSM parameter wins when configured, because that is what the promotion pipeline writes.
+    A failure to read it is fatal rather than a silent fall back to the baked-in value: serving
+    the wrong index quietly is precisely the failure this design exists to prevent.
+    """
+    if not settings.active_index_parameter:
+        return settings.index_version
+
+    try:
+        response = ssm.get_parameter(Name=settings.active_index_parameter)
+    except (BotoCoreError, ClientError) as exc:
+        raise IndexUnavailableError(f"could not read {settings.active_index_parameter}") from exc
+
+    version = response["Parameter"]["Value"]
+    log.info("index.pointer_resolved", parameter=settings.active_index_parameter, version=version)
+    return version
+
+
 def build_retriever(settings: Settings) -> Retriever | None:
     """Load the index this environment currently points at.
 
@@ -125,16 +146,20 @@ def build_retriever(settings: Settings) -> Retriever | None:
     Every other failure raises, because a task that cannot serve its purpose should not report
     healthy; ECS replaces it and the circuit breaker rolls the deployment back.
     """
-    if settings.index_version == NO_INDEX or not settings.index_bucket:
-        log.warning(
-            "index.not_promoted",
-            index_version=settings.index_version,
-            index_bucket=settings.index_bucket or None,
-        )
+    if not settings.index_bucket:
+        log.warning("index.no_bucket_configured")
+        return None
+
+    index_version = resolve_index_version(
+        settings, boto3.client("ssm", region_name=settings.aws_region)
+    )
+
+    if index_version == NO_INDEX:
+        log.warning("index.not_promoted", index_bucket=settings.index_bucket)
         return None
 
     s3 = boto3.client("s3", region_name=settings.aws_region)
-    local_dir = download_index(s3, settings.index_bucket, settings.index_version, _cache_root())
+    local_dir = download_index(s3, settings.index_bucket, index_version, _cache_root())
 
     manifest_path = local_dir / MANIFEST_FILENAME
     try:

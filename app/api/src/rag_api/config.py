@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     index_bucket: str = ""
     index_version: str = NO_INDEX
 
+    # When set, the live index version is read from this SSM parameter at startup instead of from
+    # index_version. The parameter is what promotion and rollback write, so reading it here is what
+    # makes a pointer flip reach the service — otherwise the task definition would have to be
+    # rewritten for every promotion, and rollback would stop being a one-line operation.
+    active_index_parameter: str = ""
+
     embed_model_id: str = "amazon.titan-embed-text-v2:0"
     text_model_id: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
 
