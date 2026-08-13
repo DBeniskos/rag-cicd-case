@@ -106,9 +106,16 @@ variable "embed_model_id" {
 }
 
 variable "text_model_id" {
-  description = "Cross-region inference profile id for generation."
+  description = <<-EOT
+    Cross-region inference profile id for generation.
+
+    Nova Lite is the default because Anthropic models on Bedrock additionally require a per-account
+    use case form that cannot be submitted from Terraform. Switching to
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0" is supported and requires no code change; the IAM
+    policy derives the foundation-model ARNs from this value.
+  EOT
   type        = string
-  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+  default     = "us.amazon.nova-lite-v1:0"
 }
 
 variable "max_output_tokens" {

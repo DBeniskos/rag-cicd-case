@@ -1,61 +1,99 @@
-# Ergonomic wrapper around pipelines/scripts/*.sh — the scripts are the source of truth,
-# so a machine without make (or a CI runner) loses no capability.
+# Ergonomic wrapper around pipelines/scripts/*.sh — the scripts are the source of truth, so a
+# machine without make (or a CI runner) loses no capability. Every target below runs the same
+# command the corresponding workflow does; nothing in the deployment path is make-only.
 SHELL       := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-ENV        ?= dev
+# Environments are addressed by their path under infra/envs, because that is what Terraform, the
+# workflow inputs and the state key all use. One identifier, no translation table.
+ENV        ?= nonprod/dev
 AWS_REGION ?= us-east-1
 VERSION    ?=
 SCRIPTS    := pipelines/scripts
+ENV_DIR     = infra/envs/$(ENV)
+PY         := python
 
+# The scripts read these from the environment, so exporting them here is the whole interface.
 export AWS_REGION
+export ENV
+export VERSION
 
-.PHONY: help check-tools bootstrap platform plan deploy smoke eval promote-index rollback-index destroy fmt lint test build ci
+.PHONY: help check-tools bootstrap platform init plan deploy api-url smoke eval \
+        seed-corpus index-status promote-index rollback-index destroy fmt lint test ci
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+# ---- one-time account setup --------------------------------------------------
+
 check-tools: ## Verify the local toolchain
 	@bash $(SCRIPTS)/check_tools.sh
 
-bootstrap: ## Create the Terraform state bucket in an account (ACCOUNT=nonprod|prod)
-	@bash $(SCRIPTS)/bootstrap.sh $(ACCOUNT)
+bootstrap: ## Create the Terraform state bucket and budget alarm (once per account)
+	@bash $(SCRIPTS)/bootstrap.sh
 
-platform: ## Apply the shared layer: OIDC provider, pipeline roles, ECR (ACCOUNT=nonprod|prod)
-	@bash $(SCRIPTS)/platform.sh $(ACCOUNT)
+platform: ## Apply the shared layer: OIDC provider, pipeline roles, ECR (once per account)
+	@bash $(SCRIPTS)/platform.sh
 
-plan: ## terraform plan for an environment
-	@bash $(SCRIPTS)/terraform.sh plan $(ENV)
+# ---- environments ------------------------------------------------------------
 
-deploy: ## Apply infra and roll out a release (ENV=dev VERSION=v0.1.0)
-	@bash $(SCRIPTS)/deploy.sh $(ENV) $(VERSION)
+init: ## terraform init for an environment (ENV=nonprod/dev)
+	@terraform -chdir=$(ENV_DIR) init -input=false -reconfigure -backend-config="$(CURDIR)/infra/backend.hcl"
 
-smoke: ## Hit /healthz and /version against an environment
-	@bash $(SCRIPTS)/smoke.sh $(ENV)
+plan: init ## terraform plan for an environment
+	@terraform -chdir=$(ENV_DIR) plan -input=false
 
-eval: ## Run the golden-set eval harness against an environment
-	@bash $(SCRIPTS)/eval.sh $(ENV)
+deploy: ## Deploy a published release (ENV=nonprod/dev VERSION=v0.1.0)
+	@bash $(SCRIPTS)/deploy.sh
+
+api-url: ## Print the environment's base URL
+	@terraform -chdir=$(ENV_DIR) output -raw api_url
+
+smoke: ## Assert the environment serves the expected release (ENV=... [VERSION=...])
+	@bash $(SCRIPTS)/smoke.sh "$$(terraform -chdir=$(ENV_DIR) output -raw api_url)" $(VERSION)
+
+eval: ## Run the golden-set quality gate against an environment
+	@$(PY) eval/run_eval.py \
+	  --base-url "$$(terraform -chdir=$(ENV_DIR) output -raw api_url)" \
+	  --env "$(ENV)"
+
+# ---- index lifecycle ---------------------------------------------------------
+
+seed-corpus: ## Upload data/raw to the environment's corpus prefix
+	@bash $(SCRIPTS)/seed_corpus.sh
+
+index-status: ## Show the promoted index version and what else is available
+	@bash $(SCRIPTS)/promote_index.sh --status
 
 promote-index: ## Point an environment at an index version (VERSION=v3-abc1234)
-	@bash $(SCRIPTS)/promote_index.sh $(ENV) $(VERSION)
+	@bash $(SCRIPTS)/promote_index.sh $(VERSION)
 
 rollback-index: ## Flip the index pointer back to the previous version
-	@bash $(SCRIPTS)/promote_index.sh $(ENV) --previous
+	@bash $(SCRIPTS)/promote_index.sh --rollback
 
-destroy: ## Tear an environment down
-	@bash $(SCRIPTS)/destroy.sh $(ENV)
+# ---- teardown ----------------------------------------------------------------
+
+# The image variables have no defaults by design, so destroy has to supply throwaway values.
+# Making them optional would let a real apply run with a placeholder image.
+destroy: init ## Tear an environment down (ENV=nonprod/dev) — prompts before destroying
+	@terraform -chdir=$(ENV_DIR) destroy \
+	  -var "image=placeholder/rag-api:destroy" \
+	  -var "ingest_image=placeholder/rag-ingest:destroy"
+
+# ---- local quality gate ------------------------------------------------------
 
 fmt: ## Format Python and Terraform in place
-	@bash $(SCRIPTS)/fmt.sh
+	@$(PY) -m ruff check --fix .
+	@$(PY) -m black .
+	@terraform fmt -recursive infra
 
-lint: ## Lint Python and Terraform (no writes) — same checks CI runs
-	@bash $(SCRIPTS)/lint.sh
+lint: ## The same checks the PR gate runs — no writes
+	@$(PY) -m ruff check .
+	@$(PY) -m black --check .
+	@terraform fmt -check -recursive infra
 
-test: ## Run unit tests with coverage
-	@bash $(SCRIPTS)/test.sh
-
-build: ## Build both container images locally
-	@bash $(SCRIPTS)/build.sh $(if $(VERSION),$(VERSION),local)
+test: ## Unit tests with coverage, enforcing fail_under from pyproject.toml
+	@$(PY) -m pytest
 
 ci: lint test ## Everything the PR gate runs, locally

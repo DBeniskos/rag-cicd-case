@@ -1,8 +1,9 @@
 """Bedrock generation.
 
-Uses the Converse API rather than model-specific ``invoke_model`` payloads: swapping Claude Haiku
-for Nova Lite becomes a change to one Terraform variable and one IAM ARN, with no code change.
-That optionality is worth more here than the handful of model-specific parameters it gives up.
+Uses the Converse API rather than model-specific ``invoke_model`` payloads: swapping Nova Lite
+for Claude Haiku becomes a change to one Terraform variable and one IAM ARN, with no code change.
+That optionality is worth more here than the handful of model-specific parameters it gives up,
+and it was cashed in once already when Anthropic's per-account use case form blocked dev.
 """
 
 from __future__ import annotations

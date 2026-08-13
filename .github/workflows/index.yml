@@ -151,13 +151,59 @@ jobs:
           ENV_DIR: infra/envs/${{ inputs.environment }}
         run: |
           api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url)"
+          echo "api_url=$api_url" >> "$GITHUB_ENV"
           bash pipelines/scripts/smoke.sh "$api_url"
 
+      - uses: actions/setup-python@v5
+        if: inputs.action == 'build-and-promote' || inputs.action == 'promote-existing'
+        with:
+          python-version: "3.12"
+
+      # The index is the other half of the release surface. A corpus change can wreck answer
+      # quality without a single line of application code changing, so the same gate that guards
+      # a service deploy guards an index promotion.
+      #
+      # Deliberately not run on `rollback`: rolling back is the remedy, and making it wait for a
+      # gate that may itself be failing turns a 30-second recovery into an outage.
+      - name: Eval gate
+        id: eval
+        if: inputs.action == 'build-and-promote' || inputs.action == 'promote-existing'
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+        run: |
+          python eval/run_eval.py \
+            --base-url "$api_url" \
+            --env "$ENV" \
+            --json-out "eval-report.json" \
+            --summary-out "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload eval report
+        if: always() && steps.eval.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-index-${{ inputs.environment == 'prod' && 'prod' || 'nonprod' }}-${{ github.run_id }}
+          path: eval-report.json
+          if-no-files-found: ignore
+
+      # A promoted index that fails the gate is left named in the summary, not silently reverted:
+      # automatic rollback of a pointer that a human may have promoted for a reason is worse than
+      # a loud failure with a one-command remedy.
+      - name: Report
+        if: always() && inputs.action != 'status'
+        shell: bash
+        env:
+          ENV_DIR: infra/envs/${{ inputs.environment }}
+        run: |
           {
             echo "### Index ${{ inputs.action }} → \`${{ inputs.environment }}\`"
             echo ""
             echo '```json'
-            curl -fsS "$api_url/version"
+            curl -fsS "$(terraform -chdir="$ENV_DIR" output -raw api_url)/version" || true
             echo ""
             echo '```'
+            if [ "${{ job.status }}" != "success" ]; then
+              echo ""
+              echo "Roll back the pointer: run this workflow with action \`rollback\`."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
