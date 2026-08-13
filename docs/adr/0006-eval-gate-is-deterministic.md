@@ -26,7 +26,9 @@ Gate on deterministic checks only. Specifically, over an 18-case golden set:
 | `error_rate` | any non-2xx from `/ask` |
 | `p95_latency_ms` | end-to-end regression including Bedrock |
 
-Thresholds are per environment in `eval/thresholds.yml`; prod is stricter than dev.
+Thresholds are per environment in `eval/thresholds.toml`; prod is stricter than dev. TOML rather
+than YAML so the harness parses it with stdlib `tomllib` — the gate runs in the release path, and a
+dependency install is one more thing that can fail between a deploy and its verdict.
 
 ## Rationale
 

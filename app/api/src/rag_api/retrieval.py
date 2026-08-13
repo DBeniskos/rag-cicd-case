@@ -1,9 +1,8 @@
 """Retrieval: loading the promoted index and querying it.
 
-The service depends on the ``Retriever`` Protocol, never on a concrete vector store. Swapping
-LanceDB-on-S3 for OpenSearch Serverless or pgvector is then a new class and one factory line, not
-a rewrite of the request path — which is the whole point of writing the trade-off down in an ADR
-rather than hard-coding the winner.
+Swapping LanceDB-on-S3 for OpenSearch Serverless or pgvector means a new class in this module and
+one line in ``build_retriever`` — the module boundary is the seam, which is why the trade-off is
+written down in an ADR rather than hard-coded as the winner.
 
 The index is copied to local disk at startup rather than queried over S3. That trades a slower
 start for predictable query latency (the p95 release gate measures the query path, not S3), and it
@@ -14,7 +13,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 import boto3
 import lancedb
@@ -40,13 +39,6 @@ class EmbeddingModelMismatchError(RuntimeError):
     so retrieval would silently return plausible nonsense. Failing to start turns a silent quality
     incident into a loud deployment failure that the circuit breaker rolls back.
     """
-
-
-@runtime_checkable
-class Retriever(Protocol):
-    index_version: str
-
-    def search(self, question: str, top_k: int) -> list[Passage]: ...
 
 
 class LanceRetriever:
@@ -81,10 +73,6 @@ class LanceRetriever:
             )
             for row in rows
         ]
-
-
-def _cache_root() -> Path:
-    return Path(tempfile.gettempdir()) / "rag-index"
 
 
 def download_index(s3: Any, bucket: str, index_version: str, root: Path) -> Path:
@@ -135,7 +123,7 @@ def resolve_index_version(settings: Settings, ssm: Any) -> str:
     return version
 
 
-def build_retriever(settings: Settings) -> Retriever | None:
+def build_retriever(settings: Settings) -> LanceRetriever | None:
     """Load the index this environment currently points at.
 
     Returns ``None`` when no index has been promoted yet. That is a normal state for a freshly
@@ -159,7 +147,8 @@ def build_retriever(settings: Settings) -> Retriever | None:
         return None
 
     s3 = boto3.client("s3", region_name=settings.aws_region)
-    local_dir = download_index(s3, settings.index_bucket, index_version, _cache_root())
+    cache_root = Path(tempfile.gettempdir()) / "rag-index"
+    local_dir = download_index(s3, settings.index_bucket, index_version, cache_root)
 
     manifest_path = local_dir / MANIFEST_FILENAME
     try:

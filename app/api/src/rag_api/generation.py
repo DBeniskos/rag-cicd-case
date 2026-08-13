@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 import boto3
 import structlog
@@ -46,12 +46,6 @@ class ModelUnavailableError(RuntimeError):
 class Answer:
     text: str
     usage: TokenUsage
-
-
-class Generator(Protocol):
-    model_id: str
-
-    def generate(self, question: str, passages: Sequence[Passage]) -> Answer: ...
 
 
 def build_prompt(question: str, passages: Sequence[Passage]) -> str:
@@ -130,7 +124,3 @@ class BedrockGenerator:
 def _extract_text(response: dict[str, Any]) -> str:
     blocks = response.get("output", {}).get("message", {}).get("content", [])
     return "".join(block.get("text", "") for block in blocks).strip()
-
-
-def build_generator(settings: Settings) -> Generator:
-    return BedrockGenerator.from_settings(settings)

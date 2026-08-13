@@ -1,0 +1,4 @@
+1.Observability module — dashboard, SNS, alarms
+2.Deploy stage — blue/green has still never actually run
+3.Demonstrate both rollbacks
+4.Architecture diagram + 10-slide deck

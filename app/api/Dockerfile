@@ -41,7 +41,7 @@ COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 COPY --chown=10001:10001 app/api/src/ ./src/
-COPY --chown=10001:10001 app/shared/rag_shared/ ./shared/rag_shared/
+COPY --chown=10001:10001 app/shared/src/ ./shared/
 
 # Numeric UID so the ECS task definition can assert a non-root user without resolving /etc/passwd.
 USER 10001:10001

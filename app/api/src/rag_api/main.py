@@ -13,7 +13,7 @@ from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from rag_api.config import NO_INDEX, Settings, get_settings
-from rag_api.generation import ModelThrottledError, ModelUnavailableError, build_generator
+from rag_api.generation import BedrockGenerator, ModelThrottledError, ModelUnavailableError
 from rag_api.retrieval import (
     EmbeddingModelMismatchError,
     IndexUnavailableError,
@@ -33,9 +33,19 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = structlog.get_logger()
 
-# The ALB polls this per task every few seconds. Logging it would be most of the log bill and
+# The ALB polls /healthz per task every few seconds. Logging it would be most of the log bill and
 # none of the signal.
-_UNLOGGED_PATHS = frozenset({"/healthz"})
+_HEALTH_PATH = "/healthz"
+
+# Each failure mode maps to the status code that tells a caller what to do about it: retry later,
+# retry elsewhere, or stop. The `code` is machine-readable so smoke tests can distinguish causes
+# rather than guessing from a status alone.
+_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    IndexUnavailableError: (503, "index_unavailable"),
+    EmbeddingModelMismatchError: (503, "embedding_model_mismatch"),
+    ModelThrottledError: (429, "model_throttled"),
+    ModelUnavailableError: (502, "model_unavailable"),
+}
 
 router = APIRouter()
 
@@ -110,11 +120,15 @@ async def ask(payload: AskRequest, request: Request) -> AskResponse:
     )
 
 
-def _error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
+async def _handle_known_error(_: Request, exc: Exception) -> JSONResponse:
+    status_code, code = _ERRORS[type(exc)]
+    response = JSONResponse(
         status_code=status_code,
-        content=ErrorResponse(code=code, message=message).model_dump(),
+        content=ErrorResponse(code=code, message=str(exc)).model_dump(),
     )
+    if status_code == 429:
+        response.headers["retry-after"] = "1"
+    return response
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -127,7 +141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # A mismatch raises here, before the task reports healthy, so the deployment circuit
         # breaker rolls it back instead of serving answers grounded in the wrong vector space.
         app.state.retriever = build_retriever(resolved)
-        app.state.generator = build_generator(resolved)
+        app.state.generator = BedrockGenerator.from_settings(resolved)
         log.info(
             "startup",
             env=resolved.env,
@@ -162,7 +176,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response = await call_next(request)
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
-            if request.url.path not in _UNLOGGED_PATHS:
+            if request.url.path != _HEALTH_PATH:
                 log.info(
                     "http.request",
                     method=request.method,
@@ -173,23 +187,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["x-request-id"] = request_id
         return response
 
-    @app.exception_handler(IndexUnavailableError)
-    async def _index_unavailable(_: Request, exc: IndexUnavailableError) -> JSONResponse:
-        return _error(503, "index_unavailable", str(exc))
-
-    @app.exception_handler(EmbeddingModelMismatchError)
-    async def _embedding_mismatch(_: Request, exc: EmbeddingModelMismatchError) -> JSONResponse:
-        return _error(503, "embedding_model_mismatch", str(exc))
-
-    @app.exception_handler(ModelThrottledError)
-    async def _model_throttled(_: Request, exc: ModelThrottledError) -> JSONResponse:
-        response = _error(429, "model_throttled", str(exc))
-        response.headers["retry-after"] = "1"
-        return response
-
-    @app.exception_handler(ModelUnavailableError)
-    async def _model_unavailable(_: Request, exc: ModelUnavailableError) -> JSONResponse:
-        return _error(502, "model_unavailable", str(exc))
+    for exc_type in _ERRORS:
+        app.add_exception_handler(exc_type, _handle_known_error)
 
     app.include_router(router)
     return app

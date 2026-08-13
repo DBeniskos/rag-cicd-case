@@ -39,7 +39,7 @@ COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
 COPY --chown=10001:10001 app/ingest/src/ ./src/
-COPY --chown=10001:10001 app/shared/rag_shared/ ./shared/rag_shared/
+COPY --chown=10001:10001 app/shared/src/ ./shared/
 
 # A run-to-completion task, so no healthcheck and no exposed port: its exit code is the signal.
 USER 10001:10001
