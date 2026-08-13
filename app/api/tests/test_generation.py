@@ -54,7 +54,7 @@ def test_generate_returns_text_and_token_usage(bedrock_client):
         "system": ANY,
         "messages": ANY,
         # The cost cap and the determinism setting must actually reach Bedrock.
-        "inferenceConfig": {"maxTokens": 256, "temperature": 0.0, "topP": 0.9},
+        "inferenceConfig": {"maxTokens": 256, "temperature": 0.0},
     }
 
     with Stubber(bedrock_client) as stubber:

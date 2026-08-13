@@ -92,16 +92,25 @@ class BedrockGenerator:
                 inferenceConfig={
                     "maxTokens": self._max_output_tokens,
                     # Zero temperature keeps the eval gate a measurement rather than a coin flip.
+                    # topP is deliberately omitted: Anthropic models reject both sampling controls
+                    # in one request with a ValidationException.
                     "temperature": 0.0,
-                    "topP": 0.9,
                 },
             )
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
+            message = exc.response.get("Error", {}).get("Message", "")
             if code in _THROTTLE_CODES:
                 log.warning("bedrock.throttled", model_id=self.model_id, error_code=code)
                 raise ModelThrottledError(code) from exc
-            log.error("bedrock.client_error", model_id=self.model_id, error_code=code)
+            # The provider's message is the only thing that distinguishes a bad parameter from a
+            # missing model, so it is logged even though it never reaches the caller.
+            log.error(
+                "bedrock.client_error",
+                model_id=self.model_id,
+                error_code=code,
+                error_message=message,
+            )
             raise ModelUnavailableError(code or "ClientError") from exc
         except BotoCoreError as exc:
             log.error("bedrock.transport_error", model_id=self.model_id, error=str(exc))
