@@ -4,7 +4,8 @@ CI/CD pipeline for a GenAI RAG microservice on AWS.
 
 This document explains *why* the system is shaped the way it is. What it does and how to run it are
 in the [README](../README.md); how to operate it when it breaks is in the
-[runbook](runbook.md); the individual decisions and their trade-offs are in [adr/](adr/).
+[runbook](runbook.md); the individual decisions and their trade-offs are in
+[decisions](decisions.md).
 
 ---
 
@@ -69,7 +70,8 @@ node group and a Kubernetes upgrade cadence. If this platform grew to twenty ser
 calculation reverses.
 
 **Why the index lives on local disk rather than being queried over the network.** See
-[ADR-0001](adr/0001-vector-store.md). The short version: at this corpus size the alternatives cost
+[decisions §1](decisions.md#1-vector-store-lancedb-on-s3-not-opensearch-or-pgvector). The short
+version: at this corpus size the alternatives cost
 between 50x and 30,000x more per month and make rollback a restore operation instead of a pointer
 write.
 
@@ -161,7 +163,7 @@ URL. The benefit is that a pass means something.
 irreproducible and adds a second model's availability to the release path, so the same artefact can
 pass and then fail. A flaky gate gets overridden, and an overridden gate is worse than no gate.
 Full reasoning and the rejected alternatives are in
-[ADR-0006](adr/0006-eval-gate-is-deterministic.md).
+[decisions §6](decisions.md#6-the-eval-gate-is-deterministic--no-llm-judge-in-the-release-path).
 
 Two details that matter more than they look:
 
@@ -216,9 +218,9 @@ Being explicit about scope is part of the design.
 
 | Not built | Why | What it would take |
 | --- | --- | --- |
-| Separate AWS accounts | scope: this is a pipeline exercise, not a landing zone. Compensated with scoped roles and environment-gated credentials — [ADR-0005](adr/0005-single-account-two-stacks.md) | Organizations, cross-account roles, a second state bucket |
+| Separate AWS accounts | scope: this is a pipeline exercise, not a landing zone. Compensated with scoped roles and environment-gated credentials — [decisions §5](decisions.md) | Organizations, cross-account roles, a second state bucket |
 | Authentication on `/ask` | no user model in the brief; the ALB is public and the service is stateless | Cognito or an API Gateway authorizer in front of the ALB |
-| LLM-as-judge scoring | would make the release gate irreproducible — [ADR-0006](adr/0006-eval-gate-is-deterministic.md) | a nightly offline job producing a trend line, not a gate |
+| LLM-as-judge scoring | would make the release gate irreproducible — [decisions §6](decisions.md) | a nightly offline job producing a trend line, not a gate |
 | Autoscaling | the load profile is a demo | target-tracking on ALB request count per target |
 | WAF, Shield, private subnets with NAT | cost, in a personal account, for no demonstrative value | a NAT gateway is ~$32/month by itself |
 | Multi-region | the failure domain is one region by choice | cross-region index replication and a Route 53 health check |

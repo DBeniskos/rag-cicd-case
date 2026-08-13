@@ -1,7 +1,7 @@
 """Bedrock generation via the Converse API.
 
 Converse rather than model-specific invoke_model payloads: changing model is one Terraform
-variable and one IAM ARN. See docs/adr/0004-converse-api.md.
+variable and one IAM ARN. See docs/decisions.md.
 """
 
 from __future__ import annotations

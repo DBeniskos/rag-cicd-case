@@ -2,8 +2,7 @@
 
 The index is copied to local disk at startup rather than queried over S3: predictable query
 latency, and manifest validation happens before the task reports healthy. Swapping the store for
-OpenSearch or pgvector is a new class here plus one line in build_retriever — see
-docs/adr/0001-vector-store.md.
+OpenSearch or pgvector is a new class here plus one line in build_retriever — see docs/decisions.md.
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ This file is maintained as the work progresses, not reconstructed at the end.
 markdown. This is the work where an assistant is genuinely faster and the failure mode (a typo) is
 caught by `terraform validate` or a linter anyway.
 
-**Where the decisions were human:** everything in `docs/adr/`. The architecture was specified
+**Where the decisions were human:** everything in `docs/decisions.md`. The architecture was specified
 before any code was generated — two accounts, ALB over NLB, LanceDB on S3, three OIDC roles split
 by pipeline, index-as-artifact with an SSM pointer. The assistant implemented that specification;
 it did not choose it.
@@ -49,7 +49,7 @@ which was a one-variable change precisely because of the Converse API decision i
 
 | Date | Milestone | AI-assisted | Human-led |
 | --- | --- | --- | --- |
-| 2026-08-12 | M1 — scaffold, Terraform skeleton, API stub | File scaffolding, module boilerplate, README/CONTRIBUTING drafts | Layer split (bootstrap/platform/envs), no-NAT decision, scripts-not-YAML rule, naming convention |
+| 2026-08-12 | M1 — scaffold, Terraform skeleton, API stub | File scaffolding, module boilerplate, README drafts | Layer split (bootstrap/platform/envs), no-NAT decision, scripts-not-YAML rule, naming convention |
 | 2026-08-13 | M2 — platform, CI, first real deploys | Workflow YAML, IAM policy documents, bash scripts | OIDC role split by pipeline, digest-not-tag promotion, immutable-release guard |
 | 2026-08-13 | M3 — index pipeline, `/ask` end to end | Ingestion job, manifest handling, retrieval module | Index versioning scheme, manifest-last upload ordering, embedding-mismatch guard |
 | 2026-08-13 | M4 — eval gate, docs, ADRs | Harness implementation, golden-set drafting, ADR prose | **Rejecting LLM-as-judge for the gate** (ADR-0006), threshold levels, what the gate must refuse to do |

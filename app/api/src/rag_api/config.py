@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     active_index_parameter: str = ""
 
     embed_model_id: str = "amazon.titan-embed-text-v2:0"
-    # Cross-region inference profile id, not a bare model id. See docs/adr/0004-converse-api.md.
+    # Cross-region inference profile id, not a bare model id. See docs/decisions.md.
     text_model_id: str = "us.amazon.nova-lite-v1:0"
 
     top_k: int = Field(default=4, ge=1, le=20)

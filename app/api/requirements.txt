@@ -5,4 +5,3 @@ pydantic-settings~=2.6
 boto3~=1.35
 structlog~=24.4
 lancedb~=0.37
-pyarrow~=25.0

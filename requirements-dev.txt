@@ -1,4 +1,7 @@
+# Tests cover both services, so both runtime sets are installed rather than relying on the API's
+# dependencies happening to be a superset of the job's.
 -r app/api/requirements.txt
+-r app/ingest/requirements.txt
 
 pytest~=8.3
 pytest-cov~=6.0
