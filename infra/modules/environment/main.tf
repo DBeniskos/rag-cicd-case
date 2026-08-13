@@ -75,9 +75,7 @@ module "ingest" {
   region      = var.region
   account_id  = local.account_id
 
-  # Falls back to the API image so the first apply of a new environment succeeds before an ingest
-  # image has ever been released. index.yml overrides it with the real digest.
-  image              = var.ingest_image != "" ? var.ingest_image : var.image
+  image              = var.ingest_image
   execution_role_arn = module.api.execution_role_arn
 
   index_bucket_arn  = module.index_store.bucket_arn
