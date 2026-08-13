@@ -38,6 +38,24 @@ variable "image" {
   type        = string
 }
 
+variable "ingest_image" {
+  description = "Ingest image. Defaults to the API image so a first apply works before ingest ships."
+  type        = string
+  default     = ""
+}
+
+variable "corpus_key" {
+  description = "S3 key of the source corpus, under the raw/ prefix."
+  type        = string
+  default     = "raw/movie_plots.csv"
+}
+
+variable "doc_limit" {
+  description = "Documents to ingest. The corpus is not the point; exercising the pipeline is."
+  type        = number
+  default     = 400
+}
+
 variable "cpu" {
   type    = number
   default = 256

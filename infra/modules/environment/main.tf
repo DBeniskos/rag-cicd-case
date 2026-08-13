@@ -66,6 +66,30 @@ module "api" {
   log_retention_days = var.log_retention_days
 }
 
+# The ingestion job exists in every environment, because an index has to be built where it will be
+# served: the same corpus embedded by the same model, written to that environment's own bucket.
+module "ingest" {
+  source = "../ingest-task"
+
+  name_prefix = local.name_prefix
+  region      = var.region
+  account_id  = local.account_id
+
+  # Falls back to the API image so the first apply of a new environment succeeds before an ingest
+  # image has ever been released. index.yml overrides it with the real digest.
+  image              = var.ingest_image != "" ? var.ingest_image : var.image
+  execution_role_arn = module.api.execution_role_arn
+
+  index_bucket_arn  = module.index_store.bucket_arn
+  index_bucket_name = module.index_store.bucket_name
+  corpus_key        = var.corpus_key
+
+  embed_model_id     = var.embed_model_id
+  doc_limit          = var.doc_limit
+  git_sha            = var.git_sha
+  log_retention_days = var.log_retention_days
+}
+
 # Only blue/green environments get a CodeDeploy application. Dev relies on the ECS deployment
 # circuit breaker instead, which is a different rollback mechanism rather than a lesser one:
 # it reverses a task set that never becomes healthy, where CodeDeploy reverses one that is
