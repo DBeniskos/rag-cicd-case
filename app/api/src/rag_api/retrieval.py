@@ -128,9 +128,7 @@ def resolve_index_version(settings: Settings, ssm: Any) -> str:
     try:
         response = ssm.get_parameter(Name=settings.active_index_parameter)
     except (BotoCoreError, ClientError) as exc:
-        raise IndexUnavailableError(
-            f"could not read {settings.active_index_parameter}"
-        ) from exc
+        raise IndexUnavailableError(f"could not read {settings.active_index_parameter}") from exc
 
     version = response["Parameter"]["Value"]
     log.info("index.pointer_resolved", parameter=settings.active_index_parameter, version=version)
