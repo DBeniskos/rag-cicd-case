@@ -54,10 +54,11 @@ module "api" {
 
   deployment_controller = var.deployment_controller
 
-  index_bucket_arn           = module.index_store.bucket_arn
-  index_bucket_name          = module.index_store.bucket_name
-  active_index_parameter_arn = module.index_store.active_index_parameter_arn
-  active_index_version       = var.active_index_version
+  index_bucket_arn            = module.index_store.bucket_arn
+  index_bucket_name           = module.index_store.bucket_name
+  active_index_parameter_arn  = module.index_store.active_index_parameter_arn
+  active_index_parameter_name = module.index_store.active_index_parameter_name
+  active_index_version        = var.active_index_version
 
   embed_model_id    = var.embed_model_id
   text_model_id     = var.text_model_id

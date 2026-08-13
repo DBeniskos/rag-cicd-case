@@ -36,6 +36,9 @@ resource "aws_ecs_task_definition" "api" {
         { name = "RAG_ENV", value = var.environment },
         { name = "RAG_AWS_REGION", value = var.region },
         { name = "RAG_INDEX_BUCKET", value = var.index_bucket_name },
+        # The service resolves the live index from this parameter at startup, so a promotion or a
+        # rollback is a parameter write plus a restart - the task definition never changes.
+        { name = "RAG_ACTIVE_INDEX_PARAMETER", value = var.active_index_parameter_name },
         { name = "RAG_INDEX_VERSION", value = var.active_index_version },
         { name = "RAG_EMBED_MODEL_ID", value = var.embed_model_id },
         { name = "RAG_TEXT_MODEL_ID", value = var.text_model_id },

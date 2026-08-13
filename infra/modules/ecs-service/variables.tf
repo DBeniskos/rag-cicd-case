@@ -105,6 +105,11 @@ variable "active_index_parameter_arn" {
   type = string
 }
 
+variable "active_index_parameter_name" {
+  description = "Read by the service at startup to discover which index is live."
+  type        = string
+}
+
 variable "active_index_version" {
   description = "Injected into the task definition; a promotion is a new task definition revision."
   type        = string

@@ -12,7 +12,7 @@ import structlog
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from rag_api.config import Settings, get_settings
+from rag_api.config import NO_INDEX, Settings, get_settings
 from rag_api.generation import ModelThrottledError, ModelUnavailableError, build_generator
 from rag_api.retrieval import (
     EmbeddingModelMismatchError,
@@ -55,11 +55,14 @@ async def healthz() -> HealthResponse:
 async def version(request: Request) -> VersionResponse:
     """What is actually running. The deploy pipeline asserts on this before shifting traffic."""
     settings: Settings = request.app.state.settings
+    retriever = request.app.state.retriever
     return VersionResponse(
         env=settings.env,
         release=settings.release_version,
         git_sha=settings.git_sha,
-        index_version=settings.index_version,
+        # Read from the loaded index rather than from configuration, so this reports what is being
+        # served rather than what was requested.
+        index_version=retriever.index_version if retriever is not None else NO_INDEX,
         embed_model_id=settings.embed_model_id,
         text_model_id=settings.text_model_id,
     )

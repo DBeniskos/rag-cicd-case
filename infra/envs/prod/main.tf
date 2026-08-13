@@ -119,6 +119,10 @@ output "ingest_task_family" {
   value = module.environment.ingest_task_family
 }
 
+output "ingest_log_group_name" {
+  value = module.environment.ingest_log_group_name
+}
+
 output "subnet_ids" {
   value = module.environment.subnet_ids
 }
