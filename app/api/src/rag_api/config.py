@@ -44,9 +44,16 @@ class Settings(BaseSettings):
     active_index_parameter: str = ""
 
     embed_model_id: str = "amazon.titan-embed-text-v2:0"
-    # Inference profile rather than a bare model id: newer Anthropic models are only invokable
+    # Inference profile rather than a bare model id: current-generation models are only invokable
     # through one, and the profile is what routes the call across regions.
-    text_model_id: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    #
+    # Nova Lite rather than Claude Haiku. Anthropic models on Bedrock require a per-account use
+    # case form to be submitted and approved out of band; a first-party Amazon model is invokable
+    # as soon as the IAM policy allows it. Making the release path depend on a console form that a
+    # reviewer has to fill in is a worse property than any quality difference between the two at
+    # this corpus size. Swapping back is one Terraform variable — see
+    # docs/adr/0004-converse-api.md.
+    text_model_id: str = "us.amazon.nova-lite-v1:0"
 
     top_k: int = Field(default=4, ge=1, le=20)
     # Caps the blast radius of a runaway prompt on the bill, not just on latency.

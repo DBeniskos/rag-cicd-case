@@ -53,7 +53,7 @@ index gets the same release discipline the code gets.
             │                                   │
             └──────────► Amazon Bedrock ◀───────┘
                  Titan Text Embeddings V2 (embed)
-                 Claude Haiku (generate)
+                 Amazon Nova Lite (generate)
               IAM scoped to exactly those model ARNs
 
    CloudWatch alarms ──► SNS ──► chat webhook
@@ -113,14 +113,21 @@ deployment path is reachable only from CI, which is what makes an incident at 2a
 | Git Bash / WSL | — | running `pipelines/scripts/*.sh` on Windows |
 
 One AWS account and **Bedrock model access enabled in `us-east-1`** for
-`amazon.titan-embed-text-v2:0` and Anthropic Claude Haiku
+`amazon.titan-embed-text-v2:0` and `amazon.nova-lite-v1:0`
 (Bedrock console → *Model access* → *Enable specific models*). Model access is granted per account
 and per region, so it is requested once here.
 
-> Newer Anthropic models cannot be invoked by their bare foundation-model id — they are reachable
-> only through a cross-region **inference profile** such as
-> `us.anthropic.claude-haiku-4-5-20251001-v1:0`. Confirm what your account offers with
-> `aws bedrock list-inference-profiles`, since availability differs by account and region.
+> Current-generation models cannot be invoked by their bare foundation-model id — they are
+> reachable only through a cross-region **inference profile** such as `us.amazon.nova-lite-v1:0`.
+> Confirm what your account offers with `aws bedrock list-inference-profiles`, since availability
+> differs by account and region.
+
+> **Why Nova Lite and not Claude Haiku.** Anthropic models on Bedrock require a per-account *use
+> case details* form to be submitted and approved before any invocation succeeds; until then every
+> call returns `ResourceNotFoundException` with that explanation in the message. A first-party
+> Amazon model is invokable as soon as IAM allows it, so the default keeps the release path free of
+> a console prerequisite. Switching to Claude is `-var text_model_id=us.anthropic.claude-...` and
+> no code change — the point of [ADR-0004](docs/adr/0004-converse-api.md).
 
 > Use a personal AWS account. Nothing in this repo should ever run against a corporate account.
 

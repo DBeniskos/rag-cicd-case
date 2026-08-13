@@ -84,6 +84,41 @@ jobs:
           api_url="$(terraform -chdir="infra/envs/${ENV}" output -raw api_url)"
           echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # smoke.sh already proved the right *bytes* are serving. This proves the right *answers*
+      # are. A release can pass every unit test, deploy cleanly and still degrade retrieval —
+      # a prompt change or an embedding-model bump does exactly that — so the gate runs against
+      # the live environment rather than an in-process app.
+      #
+      # It runs after traffic has shifted, which is a deliberate trade. Gating a rolling update
+      # before the shift is not possible without a second endpoint, so dev and stage catch the
+      # regression and the rollback path (documented in docs/runbook.md) is the remedy in prod.
+      - name: Eval gate
+        id: eval
+        shell: bash
+        env:
+          BASE_URL: ${{ steps.deploy.outputs.api_url }}
+          ENV: ${{ inputs.environment }}
+        run: |
+          python eval/run_eval.py \
+            --base-url "$BASE_URL" \
+            --env "$ENV" \
+            --json-out "eval-report.json" \
+            --summary-out "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded on failure too: the report is the evidence for the rollback decision, and it is
+      # the first thing anyone asks for.
+      - name: Upload eval report
+        if: always() && steps.eval.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ inputs.environment == 'prod' && 'prod' || 'nonprod' }}-${{ inputs.version }}
+          path: eval-report.json
+          if-no-files-found: ignore
+
       - name: Summarise
         if: always()
         shell: bash
@@ -100,6 +135,7 @@ jobs:
             echo "| url | ${{ steps.deploy.outputs.api_url }} |"
             echo ""
             if [ "${{ job.status }}" != "success" ]; then
-              echo "The previous task set remains live. Nothing was promoted."
+              echo "Roll back with: \`deploy.yml\` at the previous version, or"
+              echo "\`index.yml\` action \`rollback\` if the eval gate failed on retrieval."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

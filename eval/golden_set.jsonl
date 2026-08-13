@@ -1,0 +1,18 @@
+{"id": "lighthouse-footprints", "question": "What does the relief crew find in the lighthouse keeper's log?", "expect_doc": "The Lighthouse Keeper", "expect_any": ["footprints", "snow"], "kind": "grounded"}
+{"id": "harvest-daughter", "question": "What does the eldest daughter propose to deal with the drought?", "expect_doc": "Harvest Season", "expect_any": ["drought-resistant", "drought resistant", "crops"], "kind": "grounded"}
+{"id": "cartographer-map", "question": "Why could the mountain range not be shown on a single sheet?", "expect_doc": "The Cartographer", "expect_any": ["valley", "valleys", "different"], "kind": "grounded"}
+{"id": "signal-origin", "question": "What was the repeating pulse detected by the radio observatory?", "expect_doc": "Signal Drift", "expect_any": ["reflection", "broadcast", "terrestrial"], "kind": "grounded"}
+{"id": "understudy-choice", "question": "What choice does the director have to make about the staging?", "expect_doc": "The Understudy", "expect_any": ["audiences expect", "interpretation", "version"], "kind": "grounded"}
+{"id": "ferry-passenger", "question": "Why does the ferry operator keep running the winter crossing?", "expect_doc": "Winter Ferry", "expect_any": ["elderly", "sister", "passenger"], "kind": "grounded"}
+{"id": "clockmaker-drawings", "question": "Why were the clockmaker's drawings left incomplete?", "expect_doc": "The Clockmaker's Apprentice", "expect_any": ["test", "deliberate", "oversight"], "kind": "grounded"}
+{"id": "ground-truth-cause", "question": "What caused the disagreement between the survey team and the satellite imagery?", "expect_doc": "Ground Truth", "expect_any": ["calibration", "error"], "kind": "grounded"}
+{"id": "salvage-container", "question": "What was unusual about one of the recovered containers?", "expect_doc": "Salvage", "expect_any": ["manifest", "contents", "owner"], "kind": "grounded"}
+{"id": "seed-vault-argument", "question": "What does the visiting botanist argue about the seed vault?", "expect_doc": "The Seed Vault", "expect_any": ["cultivation", "preservation", "living"], "kind": "grounded"}
+{"id": "exchange-operator", "question": "What does the night shift telephone operator notice?", "expect_doc": "Night Shift at the Exchange", "expect_any": ["calls", "emergency", "sequence"], "kind": "grounded"}
+{"id": "restorer-dilemma", "question": "Why can the restorer not simply reveal the hidden painting?", "expect_doc": "The Restorer", "expect_any": ["destroy", "gallery", "visible"], "kind": "grounded"}
+{"id": "relay-failure", "question": "How did the redundant radio repeater network fail?", "expect_doc": "Backcountry Relay", "expect_any": ["middle", "storm", "one point", "split"], "kind": "grounded"}
+{"id": "archivist-index", "question": "How do the archivist's classification decisions affect researchers?", "expect_doc": "The Archivist's Index", "expect_any": ["find", "collection", "interpretation"], "kind": "grounded"}
+{"id": "quiet-carriage-rule", "question": "What happens when a new passenger ignores the silent carriage convention?", "expect_doc": "The Quiet Carriage", "expect_any": ["enforcement", "passive", "escalation"], "kind": "grounded"}
+{"id": "oos-capital", "question": "What is the capital city of Australia?", "expect_doc": null, "expect_any": [], "kind": "refusal"}
+{"id": "oos-share-price", "question": "What was Pfizer's share price yesterday?", "expect_doc": null, "expect_any": [], "kind": "refusal"}
+{"id": "oos-recipe", "question": "Give me a recipe for sourdough bread.", "expect_doc": null, "expect_any": [], "kind": "refusal"}

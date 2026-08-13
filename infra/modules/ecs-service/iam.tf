@@ -48,8 +48,8 @@ resource "aws_iam_role" "task" {
 }
 
 locals {
-  # Newer Anthropic models are only reachable through a cross-region inference profile, never the
-  # bare foundation-model id. Invoking one requires permission on the profile *and* on the
+  # Current-generation models are only reachable through a cross-region inference profile, never
+  # the bare foundation-model id. Invoking one requires permission on the profile *and* on the
   # underlying model in every region the profile may route to, so the base id is derived here
   # rather than widening the policy to all Bedrock models.
   text_base_model    = replace(var.text_model_id, "/^(us|eu|apac|global)\\./", "")

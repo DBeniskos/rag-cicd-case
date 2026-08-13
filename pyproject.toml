@@ -35,13 +35,13 @@ line-length = 100
 target-version = ["py312"]
 
 [tool.pytest.ini_options]
-pythonpath = ["app/api/src", "app/ingest/src", "app/shared"]
-testpaths = ["app/api/tests", "app/shared/tests", "app/ingest/tests"]
+pythonpath = ["app/api/src", "app/ingest/src", "app/shared", "eval"]
+testpaths = ["app/api/tests", "app/shared/tests", "app/ingest/tests", "eval/tests"]
 addopts = "-q --strict-markers --cov --cov-report=term-missing --cov-report=xml"
 markers = ["integration: hits real AWS; excluded from the PR gate"]
 
 [tool.coverage.run]
-source = ["app/api/src", "app/ingest/src", "app/shared/rag_shared"]
+source = ["app/api/src", "app/ingest/src", "app/shared/rag_shared", "eval"]
 branch = true
 omit = ["*/tests/*"]
 
