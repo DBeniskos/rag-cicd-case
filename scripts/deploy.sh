@@ -68,6 +68,8 @@ strategy="$(terraform -chdir="$ENV_DIR" output -raw deployment_strategy)"
 api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url)"
 cluster="$(terraform -chdir="$ENV_DIR" output -raw cluster_name)"
 service="$(terraform -chdir="$ENV_DIR" output -raw service_name)"
+# Null wherever the strategy is rolling, which is why the failure is swallowed rather than fatal.
+test_url="$(terraform -chdir="$ENV_DIR" output -raw test_url 2>/dev/null || echo '')"
 
 # Both strategies are driven by ECS itself, so the apply above already started the release. The
 # difference is what ECS does with it: a rolling replacement guarded by the circuit breaker, or a
@@ -78,7 +80,8 @@ else
   printf 'deploy: %s — shift onto a second task set, bake, then retire the old one\n' "$strategy"
 fi
 
-bash "$REPO_ROOT/scripts/wait_for_deployment.sh" "$cluster" "$service" "$previous_deployment" "$api_url"
+bash "$REPO_ROOT/scripts/wait_for_deployment.sh" \
+  "$cluster" "$service" "$previous_deployment" "$api_url" "$test_url"
 
 bash "$REPO_ROOT/scripts/smoke.sh" "$api_url" "$VERSION"
 
