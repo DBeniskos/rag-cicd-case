@@ -121,6 +121,10 @@ output "deployment_strategy" {
   value = module.environment.deployment_strategy
 }
 
+output "test_url" {
+  value = module.environment.test_url
+}
+
 output "rollback_alarm_names" {
   value = module.environment.rollback_alarm_names
 }

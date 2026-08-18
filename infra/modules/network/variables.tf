@@ -20,3 +20,15 @@ variable "ingress_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "test_listener_port" {
+  description = "Blue/green validation port. 0 means the environment has no test listener."
+  type        = number
+  default     = 0
+}
+
+variable "test_ingress_cidrs" {
+  description = "Sources allowed to reach the test listener. Deliberately separate from ingress_cidrs, because the green task set is unproven and should be reachable by fewer people than production."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
