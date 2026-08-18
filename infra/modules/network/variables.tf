@@ -28,7 +28,7 @@ variable "test_listener_port" {
 }
 
 variable "test_ingress_cidrs" {
-  description = "Sources allowed to reach the test listener. Deliberately separate from ingress_cidrs, because the green task set is unproven and should be reachable by fewer people than production."
+  description = "Sources allowed to reach the test listener. Empty by default: the task set behind it has passed no canary, and a release nobody has validated should not be reachable from the internet."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }

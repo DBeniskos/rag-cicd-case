@@ -78,38 +78,7 @@ else
   printf 'deploy: %s — shift onto a second task set, bake, then retire the old one\n' "$strategy"
 fi
 
-# `aws ecs wait services-stable` is not usable here: its budget is a fixed 10 minutes, while a
-# canary deliberately spends longer than that waiting — canary bake, then shift, then the bake that
-# keeps an instant rollback possible. It also cannot tell a successful shift from one the alarms
-# reversed, because both end in a steady state. The deployment's own status answers both.
-deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT_SECONDS:-3600} ))
-while :; do
-  read -r deployment status <<EOF
-$(aws ecs list-service-deployments --cluster "$cluster" --service "$service" \
-  --query 'serviceDeployments[0].[serviceDeploymentArn,status]' --output text 2>/dev/null || echo "none UNKNOWN")
-EOF
-
-  # Until ECS registers ours, the newest deployment is still the previous one.
-  if [ "$deployment" = "$previous_deployment" ] || [ -z "$deployment" ]; then
-    status="REGISTERING"
-  fi
-
-  case "$status" in
-    SUCCESSFUL)
-      printf 'deploy: deployment succeeded\n'
-      break
-      ;;
-    ROLLBACK_SUCCESSFUL)
-      die "an alarm fired and ECS rolled the release back — $VERSION is not serving"
-      ;;
-    ROLLBACK_IN_PROGRESS | ROLLBACK_FAILED | STOPPED | STOP_REQUESTED)
-      die "deployment ended as $status — $VERSION is not serving"
-      ;;
-  esac
-
-  [ "$(date +%s)" -lt "$deadline" ] || die "deployment still $status after ${DEPLOY_TIMEOUT_SECONDS:-3600}s"
-  sleep 15
-done
+bash "$REPO_ROOT/scripts/wait_for_deployment.sh" "$cluster" "$service" "$previous_deployment" "$api_url"
 
 bash "$REPO_ROOT/scripts/smoke.sh" "$api_url" "$VERSION"
 

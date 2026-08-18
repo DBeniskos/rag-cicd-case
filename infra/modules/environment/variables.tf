@@ -29,9 +29,9 @@ variable "ingress_cidrs" {
 }
 
 variable "test_ingress_cidrs" {
-  description = "Sources allowed to reach the blue/green test listener. Narrow this to the operator's address in a real deployment."
+  description = "Sources allowed to reach the blue/green test listener. Empty by default; supply an operator or CI range to open it."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }
 
 variable "container_port" {

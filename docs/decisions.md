@@ -94,6 +94,15 @@ auto-rollback and a five-minute window where reverting is instant. For a case st
 cost that is the right trade; for a programme with real users, stage comes back and the answer
 flips.
 
+**The limitation worth stating plainly.** A canary is only as good as the traffic it carries. This
+service has no real users, the alarms treat missing data as not breaching, and 10% of nothing
+produces no datapoints — so today the canary cannot fail on its own. The rollback path is proven
+(we triggered one and traffic left the new version in under two minutes), but the *detection* is
+not. Closing that needs load against the canary, and the version worth building is an ECS
+`lifecycle_hook` at `POST_TEST_TRAFFIC_SHIFT` that runs `eval/run_eval.py` against the test
+listener: it gates on answer quality rather than on 5xx and latency, which is the failure a RAG
+service actually has, and it does not depend on traffic volume at all.
+
 ---
 
 ## 4. Bedrock through the Converse API, with the model id as a variable
