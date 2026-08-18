@@ -71,6 +71,17 @@ variable "docs_servers" {
   default     = "prod (live)=http://rag-prod-alb-464900636.us-east-1.elb.amazonaws.com,prod (inactive task set)=http://rag-prod-alb-464900636.us-east-1.elb.amazonaws.com:8080"
 }
 
+variable "test_ingress_cidrs" {
+  description = <<-EOT
+    Who may reach the test listener on :8080. Empty means nobody, which is the right default: the
+    task set behind it is the release that has not yet earned any production traffic, and leaving
+    it open publishes every unvalidated build to the internet for the length of a deployment.
+    Open it deliberately and temporarily, e.g. -var 'test_ingress_cidrs=["203.0.113.4/32"]'.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 # Prod differs from dev only in retention, task count and deployment controller: same modules,
 # same inputs otherwise. The index store keeps force_destroy off, so a stray destroy cannot take
 # the corpus with it.
@@ -91,10 +102,8 @@ module "environment" {
   # CANARY rather than BLUE_GREEN: the latter shifts 100% the moment the new task set is healthy,
   # which leaves the alarms nothing to observe before the blast radius is total.
   deployment_strategy = "CANARY"
-  # Long enough for the p95/p99 alarms to see several evaluation periods of real traffic, and for
-  # an operator to compare the two versions side by side on the test listener before the shift.
-  canary_bake_time_minutes = 20
-  docs_servers             = var.docs_servers
+  test_ingress_cidrs  = var.test_ingress_cidrs
+  docs_servers        = var.docs_servers
 
   log_retention_days   = 30
   index_retention_days = 90

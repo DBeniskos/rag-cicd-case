@@ -70,10 +70,21 @@ service="$(terraform -chdir="$ENV_DIR" output -raw service_name 2>/dev/null || e
 
 if [ -n "$cluster" ] && [ -n "$service" ]; then
   printf 'promote: restarting %s to pick up the new pointer\n' "$service"
+
+  # Captured before the restart, because the wait has to be able to tell our deployment from the
+  # one already recorded — see scripts/wait_for_deployment.sh.
+  previous_deployment="$(aws ecs list-service-deployments --cluster "$cluster" --service "$service" \
+    --query 'serviceDeployments[0].serviceDeploymentArn' --output text 2>/dev/null || echo none)"
+
   aws ecs update-service --cluster "$cluster" --service "$service" \
     --force-new-deployment --no-cli-pager >/dev/null
-  aws ecs wait services-stable --cluster "$cluster" --services "$service" \
+
+  # A pointer flip in prod goes through the same canary as a code release: it is a change to what
+  # the service answers with, which is exactly the kind of change the canary exists to stage.
+  api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url 2>/dev/null || echo '')"
+  bash "$REPO_ROOT/scripts/wait_for_deployment.sh" "$cluster" "$service" "$previous_deployment" "$api_url" \
     || die "service did not stabilise on $TARGET — roll back with --rollback"
+
   printf 'promote: %s is serving index %s\n' "$service" "$TARGET"
 else
   printf 'promote: no service outputs found; pointer set but nothing restarted\n'
