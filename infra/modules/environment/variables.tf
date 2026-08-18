@@ -139,6 +139,12 @@ variable "index_retention_days" {
   default = 30
 }
 
+variable "docs_servers" {
+  description = "Targets offered in the docs Servers dropdown, as comma-separated 'label=url' pairs. Lets one console exercise every environment."
+  type        = string
+  default     = ""
+}
+
 variable "canary_percent" {
   description = "Share of traffic the green task set receives before the bake period."
   type        = number

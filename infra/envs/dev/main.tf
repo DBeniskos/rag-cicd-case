@@ -62,6 +62,16 @@ variable "active_index_version" {
   default = "none"
 }
 
+variable "docs_servers" {
+  description = <<-EOT
+    Targets in the docs Servers dropdown. Dev lists only itself: a console that can reach another
+    environment invites reading one environment's answers and believing they came from another.
+    Empty would also work, since a page can always call the host it was loaded from.
+  EOT
+  type        = string
+  default     = "dev=http://rag-dev-alb-31414732.us-east-1.elb.amazonaws.com"
+}
+
 # Dev: rolling updates with the circuit breaker, one task, short log retention. Fast and cheap,
 # and the first place a bad release is caught.
 module "environment" {
@@ -79,6 +89,7 @@ module "environment" {
 
   desired_count       = 1
   deployment_strategy = "ROLLING"
+  docs_servers        = var.docs_servers
 
   log_retention_days   = 7
   index_retention_days = 14

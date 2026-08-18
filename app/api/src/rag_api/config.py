@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     # demonstrable from a browser; set false to keep a public prod endpoint opaque.
     docs_enabled: bool = True
 
+    # Comma-separated "label=url" targets offered in the docs Servers dropdown, so one console can
+    # drive every environment. Empty means the page can only call the host it was loaded from.
+    docs_servers: str = ""
+
+    @property
+    def docs_server_list(self) -> list[dict[str, str]]:
+        servers: list[dict[str, str]] = []
+        for entry in self.docs_servers.split(","):
+            label, _, url = entry.strip().partition("=")
+            if url:
+                servers.append({"url": url, "description": label})
+        return servers
+
     top_k: int = Field(default=4, ge=1, le=20)
     # Caps the cost of a runaway prompt, not just its latency.
     max_output_tokens: int = Field(default=512, ge=1, le=4096)
