@@ -11,9 +11,13 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
     top_k: int | None = Field(default=None, ge=1, le=20)
 
+    # Names the document, because the sample corpus is small enough that a vague question retrieves
+    # the right passage too weakly and the model correctly refuses.
     model_config = {
         "json_schema_extra": {
-            "examples": [{"question": "What happens to the understudy?", "top_k": 4}]
+            "examples": [
+                {"question": "What happens to the understudy in The Understudy?", "top_k": 4}
+            ]
         }
     }
 
