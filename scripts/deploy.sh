@@ -7,7 +7,7 @@
 # workflow, which is what makes an incident at 2am survivable.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_FILE="$REPO_ROOT/infra/backend.hcl"
 
 ENV_PATH="${ENV:-}"

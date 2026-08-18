@@ -10,7 +10,7 @@
 # index is versioned rather than overwritten in place.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ENV_PATH="${ENV:-}"
 TARGET="${1:-}"

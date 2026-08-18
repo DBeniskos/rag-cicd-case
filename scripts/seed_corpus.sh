@@ -8,7 +8,7 @@
 # from it, but it is not rebuildable from them.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ENV_PATH="${ENV:-}"
 SOURCE="${1:-$REPO_ROOT/data/raw/sample_movie_plots.csv}"
