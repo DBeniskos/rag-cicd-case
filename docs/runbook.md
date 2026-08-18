@@ -16,10 +16,11 @@ export AWS_REGION=us-east-1
 ## 0. First question: is it the service or the index?
 
 ```bash
-curl -s "$(make api-url)/version" | jq
+curl -s "$(make api-url)/healthz" | jq
 ```
 ```json
 {
+  "status": "ok",
   "env": "dev",
   "release": "v0.6.0",
   "git_sha": "c752f35",
@@ -45,7 +46,7 @@ configured — if it disagrees with SSM, the tasks have not restarted since the 
 
 ### 0.1 Getting the API key
 
-`/ask` requires an `x-api-key` header. `/healthz` and `/version` do not, so triage works without it.
+`/ask` requires an `x-api-key` header. `/healthz` does not, so triage works without it.
 
 ```bash
 make api-key ENV=$ENV
@@ -81,27 +82,30 @@ gh workflow run deploy.yml -f version=v0.5.0 -f environment=dev
 This is not a rebuild. `deploy.sh` resolves `v0.5.0` to the digest already in ECR, so the bytes
 that ran before are the bytes that run again.
 
-### 1.2 Prod — canary (blue/green)
+### 1.2 Prod — canary
 
-**If the deployment is still in progress,** the alarms attached to the deployment group abort it
+**If the deployment is still in progress,** the alarms attached to the service abort it
 automatically and shift traffic back to the original task set. To stop it immediately:
 
 ```bash
-aws deploy stop-deployment --deployment-id <id> --auto-rollback-enabled
+aws ecs stop-service-deployment \
+  --service-deployment-arn <arn> \
+  --stop-type ROLLBACK
 ```
 
-Find `<id>` with:
+Find `<arn>` with:
 
 ```bash
-aws deploy list-deployments \
-  --application-name rag-prod-api \
-  --deployment-group-name rag-prod-api-dg \
-  --include-only-statuses InProgress
+aws ecs list-service-deployments \
+  --cluster rag-prod-cluster \
+  --service rag-prod-api \
+  --query 'serviceDeployments[?status==`IN_PROGRESS`].serviceDeploymentArn' \
+  --output text
 ```
 
-**If the deployment already completed,** re-run `deploy.yml` at the previous version. CodeDeploy
-performs a normal blue/green shift back, so recovery follows the same canary and bake it would for
-any release.
+**If the deployment already completed,** re-run `deploy.yml` at the previous version. ECS performs
+a normal canary shift back, so recovery follows the same 10% canary and bake it would for any
+release.
 
 ### 1.3 Verify
 
@@ -109,7 +113,7 @@ any release.
 make smoke ENV=$ENV VERSION=v0.5.0
 ```
 
-`smoke.sh` fails if `/version` reports anything other than the expected release. Note that during a
+`smoke.sh` fails if `/healthz` reports anything other than the expected release. Note that during a
 rolling update the ALB round-robins between old and new tasks for several minutes — a single curl
 that returns the old version is not evidence that the rollback failed. `smoke.sh` retries.
 
@@ -145,7 +149,7 @@ Equivalent from the pipeline: `index.yml`, action `rollback`.
 
 The task could not load an index. In order of likelihood:
 
-1. **No index has ever been promoted.** `/version` reports `index_version: "none"`. Run
+1. **No index has ever been promoted.** `/healthz` reports `index_version: "none"`. Run
    `index.yml` with `build-and-promote`.
 2. **The SSM parameter names a version that is not in S3.** Compare
    `make index-status` output against `aws s3 ls s3://rag-<env>-index/indexes/`.

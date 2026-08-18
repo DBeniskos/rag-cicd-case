@@ -87,8 +87,10 @@ module "environment" {
   git_sha              = var.git_sha
   active_index_version = var.active_index_version
 
-  desired_count       = 2
-  deployment_strategy = "BLUE_GREEN"
+  desired_count = 2
+  # CANARY rather than BLUE_GREEN: the latter shifts 100% the moment the new task set is healthy,
+  # which leaves the alarms nothing to observe before the blast radius is total.
+  deployment_strategy = "CANARY"
   docs_servers        = var.docs_servers
 
   log_retention_days   = 30

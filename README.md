@@ -44,7 +44,7 @@ index gets the same release discipline the code gets.
  │                                                                 │
  │  ┌── rag-dev-* ───────────────┐   ┌── rag-prod-* ─────────────┐  │
  │  │ own VPC / ALB / ECS / S3   │   │ own VPC / ALB / ECS / S3  │  │
- │  │ rolling + circuit breaker  │   │ CodeDeploy blue/green     │  │
+ │  │ rolling + circuit breaker  │   │ ECS canary, two task sets │  │
  │  │ SSM /rag/dev/*             │   │ canary 10%/5m → 100%      │  │
  │  │ auto-rollback on failure   │   │ SSM /rag/prod/*           │  │
  │  └────────────────────────────┘   │ alarm-based auto-rollback │  │

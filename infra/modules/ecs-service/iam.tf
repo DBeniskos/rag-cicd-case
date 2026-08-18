@@ -9,7 +9,7 @@
 # traffic shift. It is separate because it acts on the load balancer, not on the workload.
 
 data "aws_iam_policy_document" "assume_ecs" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   statement {
     effect  = "Allow"
@@ -29,7 +29,7 @@ data "aws_iam_policy_document" "assume_ecs" {
 }
 
 resource "aws_iam_role" "blue_green" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   name               = "${var.name_prefix}-bluegreen"
   description        = "Assumed by ECS to shift traffic between the blue and green target groups."
@@ -39,7 +39,7 @@ resource "aws_iam_role" "blue_green" {
 # AWS-managed: the exact permissions ECS needs on listeners, rules and target groups. Hand-rolling
 # this would drift the moment AWS adds a required action to the blue/green flow.
 resource "aws_iam_role_policy_attachment" "blue_green" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   role       = aws_iam_role.blue_green[0].name
   policy_arn = "arn:aws:iam::aws:policy/AmazonECSInfrastructureRolePolicyForLoadBalancers"

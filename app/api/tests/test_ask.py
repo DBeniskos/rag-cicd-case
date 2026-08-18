@@ -49,12 +49,11 @@ class TestApiKey:
 
         assert response.status_code == 200
 
-    def test_health_and_version_stay_open(self, make_client):
+    def test_health_stays_open(self, make_client):
         # The ALB health check cannot present a key, and the smoke test has to identify the
         # running release before it holds credentials for anything.
         with make_client(api_key="s3cret") as client:
             assert client.get("/healthz").status_code == 200
-            assert client.get("/version").status_code == 200
 
     def test_no_key_configured_means_no_auth(self, make_client):
         with make_client(retriever=FakeRetriever(), generator=FakeGenerator()) as client:

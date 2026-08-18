@@ -10,9 +10,17 @@ def test_healthz_returns_ok(make_client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    # Identity is part of the contract: during a blue/green shift this is how an operator tells
-    # which task set answered.
-    assert set(body) == {"status", "env", "release", "index_version"}
+    # Identity is part of the contract: during a traffic shift this is how an operator tells
+    # which task set answered, and it is the only endpoint the deploy asserts against.
+    assert set(body) == {
+        "status",
+        "env",
+        "release",
+        "git_sha",
+        "index_version",
+        "embed_model_id",
+        "text_model_id",
+    }
 
 
 def test_healthz_is_green_even_with_no_index_promoted(make_client):
@@ -22,9 +30,9 @@ def test_healthz_is_green_even_with_no_index_promoted(make_client):
         assert client.post("/ask", json={"question": "anything"}).status_code == 503
 
 
-def test_version_reports_what_is_running(make_client):
+def test_healthz_reports_what_is_running(make_client):
     with make_client() as client:
-        body = client.get("/version").json()
+        body = client.get("/healthz").json()
 
     assert body["release"] == "v1.2.3"
     assert body["git_sha"] == "abc1234"

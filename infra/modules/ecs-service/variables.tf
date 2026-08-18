@@ -63,7 +63,7 @@ variable "desired_count" {
 }
 
 variable "release_version" {
-  description = "Surfaced by /version so a smoke test can prove which release is serving."
+  description = "Surfaced by /healthz so a smoke test can prove which release is serving."
   type        = string
   default     = "0.0.0-dev"
 }
@@ -84,16 +84,17 @@ variable "docs_servers" {
 variable "deployment_strategy" {
   description = <<-EOT
     ROLLING    = in-place replacement guarded by the deployment circuit breaker (dev).
-    BLUE_GREEN = second task set, canary traffic shift, alarm-triggered rollback (prod).
-    This is the single switch that separates the two strategies; everything else is identical,
+    BLUE_GREEN = second task set, all traffic shifted at once, then baked (alarm rollback).
+    CANARY     = second task set, canary_percent shifted first and held, then the rest (prod).
+    This is the single switch that separates the strategies; everything else is identical,
     which is what makes dev a genuine rehearsal for prod.
   EOT
   type        = string
   default     = "ROLLING"
 
   validation {
-    condition     = contains(["ROLLING", "BLUE_GREEN"], var.deployment_strategy)
-    error_message = "deployment_strategy must be ROLLING or BLUE_GREEN."
+    condition     = contains(["ROLLING", "BLUE_GREEN", "CANARY"], var.deployment_strategy)
+    error_message = "deployment_strategy must be ROLLING, BLUE_GREEN or CANARY."
   }
 }
 
