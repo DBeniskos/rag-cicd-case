@@ -91,7 +91,10 @@ module "environment" {
   # CANARY rather than BLUE_GREEN: the latter shifts 100% the moment the new task set is healthy,
   # which leaves the alarms nothing to observe before the blast radius is total.
   deployment_strategy = "CANARY"
-  docs_servers        = var.docs_servers
+  # Long enough for the p95/p99 alarms to see several evaluation periods of real traffic, and for
+  # an operator to compare the two versions side by side on the test listener before the shift.
+  canary_bake_time_minutes = 20
+  docs_servers             = var.docs_servers
 
   log_retention_days   = 30
   index_retention_days = 90

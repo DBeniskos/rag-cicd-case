@@ -49,6 +49,15 @@ git_sha="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknow
 printf 'deploy: %s -> %s\n  api    %s\n  ingest %s\n' "$VERSION" "$ENV_PATH" "$api_image" "$ingest_image"
 
 terraform -chdir="$ENV_DIR" init -input=false -reconfigure -backend-config="$BACKEND_FILE"
+
+# Read before the apply, because "the most recent deployment" one second after an apply is still
+# the previous one — and it reports SUCCESSFUL, which would make the wait below exit immediately
+# and smoke-test the release we just replaced. Empty on a first deploy, which is also correct.
+previous_deployment="$(aws ecs list-service-deployments \
+  --cluster "$(terraform -chdir="$ENV_DIR" output -raw cluster_name 2>/dev/null || echo missing)" \
+  --service "$(terraform -chdir="$ENV_DIR" output -raw service_name 2>/dev/null || echo missing)" \
+  --query 'serviceDeployments[0].serviceDeploymentArn' --output text 2>/dev/null || echo none)"
+
 terraform -chdir="$ENV_DIR" apply -input=false -auto-approve \
   -var "image=$api_image" \
   -var "ingest_image=$ingest_image" \
@@ -62,22 +71,28 @@ service="$(terraform -chdir="$ENV_DIR" output -raw service_name)"
 
 # Both strategies are driven by ECS itself, so the apply above already started the release. The
 # difference is what ECS does with it: a rolling replacement guarded by the circuit breaker, or a
-# canary shift onto a second task set that alarms can reverse.
-if [ "$strategy" = "BLUE_GREEN" ]; then
-  printf 'deploy: blue/green — canary, bake, then full shift; alarms can reverse it\n'
-else
+# staged shift onto a second task set that alarms can reverse.
+if [ "$strategy" = "ROLLING" ]; then
   printf 'deploy: rolling update with circuit breaker\n'
+else
+  printf 'deploy: %s — shift onto a second task set, bake, then retire the old one\n' "$strategy"
 fi
 
 # `aws ecs wait services-stable` is not usable here: its budget is a fixed 10 minutes, while a
 # canary deliberately spends longer than that waiting — canary bake, then shift, then the bake that
 # keeps an instant rollback possible. It also cannot tell a successful shift from one the alarms
 # reversed, because both end in a steady state. The deployment's own status answers both.
-deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT_SECONDS:-1800} ))
+deadline=$(( $(date +%s) + ${DEPLOY_TIMEOUT_SECONDS:-3600} ))
 while :; do
-  status="$(aws ecs list-service-deployments \
-    --cluster "$cluster" --service "$service" \
-    --query 'serviceDeployments[0].status' --output text 2>/dev/null || echo UNKNOWN)"
+  read -r deployment status <<EOF
+$(aws ecs list-service-deployments --cluster "$cluster" --service "$service" \
+  --query 'serviceDeployments[0].[serviceDeploymentArn,status]' --output text 2>/dev/null || echo "none UNKNOWN")
+EOF
+
+  # Until ECS registers ours, the newest deployment is still the previous one.
+  if [ "$deployment" = "$previous_deployment" ] || [ -z "$deployment" ]; then
+    status="REGISTERING"
+  fi
 
   case "$status" in
     SUCCESSFUL)
@@ -92,7 +107,7 @@ while :; do
       ;;
   esac
 
-  [ "$(date +%s)" -lt "$deadline" ] || die "deployment still $status after ${DEPLOY_TIMEOUT_SECONDS:-1800}s"
+  [ "$(date +%s)" -lt "$deadline" ] || die "deployment still $status after ${DEPLOY_TIMEOUT_SECONDS:-3600}s"
   sleep 15
 done
 
