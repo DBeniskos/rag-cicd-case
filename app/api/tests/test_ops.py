@@ -8,7 +8,11 @@ def test_healthz_returns_ok(make_client):
         response = client.get("/healthz")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    # Identity is part of the contract: during a blue/green shift this is how an operator tells
+    # which task set answered.
+    assert set(body) == {"status", "env", "release", "index_version"}
 
 
 def test_healthz_is_green_even_with_no_index_promoted(make_client):

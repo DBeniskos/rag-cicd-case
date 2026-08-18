@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # runs and unit tests use — deployed environments always have it set.
     api_key: str = ""
 
+    # Interactive docs publish every route and payload shape. Enabled here so each environment is
+    # demonstrable from a browser; set false to keep a public prod endpoint opaque.
+    docs_enabled: bool = True
+
     top_k: int = Field(default=4, ge=1, le=20)
     # Caps the cost of a runaway prompt, not just its latency.
     max_output_tokens: int = Field(default=512, ge=1, le=4096)
