@@ -62,6 +62,13 @@ output "deployment_strategy" {
   value       = var.deployment_strategy
 }
 
+# During a shift this answers from the green task set while api_url still answers from blue, which
+# is the only way to compare the two versions side by side before traffic moves.
+output "test_url" {
+  description = "Blue/green validation endpoint. Null where the strategy is rolling."
+  value       = var.deployment_strategy == "BLUE_GREEN" ? "http://${module.api.alb_dns_name}:8080" : null
+}
+
 output "rollback_alarm_names" {
   description = "The alarms that reverse a canary. Empty where the strategy is rolling."
   value       = module.api.rollback_alarm_names

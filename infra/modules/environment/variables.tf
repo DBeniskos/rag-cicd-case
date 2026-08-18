@@ -28,6 +28,12 @@ variable "ingress_cidrs" {
   default = ["0.0.0.0/0"]
 }
 
+variable "test_ingress_cidrs" {
+  description = "Sources allowed to reach the blue/green test listener. Narrow this to the operator's address in a real deployment."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "container_port" {
   type    = number
   default = 8080

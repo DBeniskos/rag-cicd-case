@@ -84,6 +84,19 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http" {
   ip_protocol       = "tcp"
 }
 
+# Without this the test listener exists but is unreachable, which defeats its only purpose:
+# proving the green task set answers correctly before any production traffic reaches it.
+resource "aws_vpc_security_group_ingress_rule" "alb_test" {
+  for_each = var.test_listener_port == 0 ? toset([]) : toset(var.test_ingress_cidrs)
+
+  security_group_id = aws_security_group.alb.id
+  description       = "Blue/green test listener from ${each.value}"
+  cidr_ipv4         = each.value
+  from_port         = var.test_listener_port
+  to_port           = var.test_listener_port
+  ip_protocol       = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "alb_to_tasks" {
   security_group_id            = aws_security_group.alb.id
   description                  = "Forward to tasks"

@@ -22,6 +22,9 @@ module "network" {
   cidr_block     = var.cidr_block
   container_port = var.container_port
   ingress_cidrs  = var.ingress_cidrs
+
+  test_listener_port = var.deployment_strategy == "BLUE_GREEN" ? 8080 : 0
+  test_ingress_cidrs = var.test_ingress_cidrs
 }
 
 module "index_store" {
