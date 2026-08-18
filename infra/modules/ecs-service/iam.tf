@@ -41,6 +41,26 @@ resource "aws_iam_role_policy_attachment" "execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Secrets are fetched by the ECS agent before the container starts, so this belongs to the
+# execution role. The task role never sees them, which means application code cannot enumerate
+# secrets it was not given.
+resource "aws_iam_role_policy" "execution_secrets" {
+  count = length(var.secret_arns) > 0 ? 1 : 0
+
+  name = "${var.name_prefix}-execution-secrets"
+  role = aws_iam_role.execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadInjectedSecretsOnly"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = var.secret_arns
+    }]
+  })
+}
+
 resource "aws_iam_role" "task" {
   name               = "${var.name_prefix}-task"
   description        = "Runtime permissions for the inference API."

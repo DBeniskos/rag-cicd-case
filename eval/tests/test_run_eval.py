@@ -107,25 +107,30 @@ class TestMetrics:
 
 class TestThresholds:
     def test_environment_overrides_default(self):
-        thresholds = load_thresholds(EVAL_DIR / "thresholds.yml", "nonprod/dev")
+        thresholds = load_thresholds(EVAL_DIR / "thresholds.toml", "nonprod/dev")
         assert thresholds["recall_at_k"] == 0.90
         assert thresholds["max_p95_latency_ms"] == 20000
         assert thresholds["answer_match_rate"] == 0.70
 
     def test_prod_is_stricter_than_dev(self):
-        dev = load_thresholds(EVAL_DIR / "thresholds.yml", "nonprod/dev")
-        prod = load_thresholds(EVAL_DIR / "thresholds.yml", "prod")
+        dev = load_thresholds(EVAL_DIR / "thresholds.toml", "nonprod/dev")
+        prod = load_thresholds(EVAL_DIR / "thresholds.toml", "prod")
         assert prod["max_p95_latency_ms"] < dev["max_p95_latency_ms"]
         assert prod["answer_match_rate"] > dev["answer_match_rate"]
 
     def test_unknown_environment_falls_back_to_defaults(self):
-        thresholds = load_thresholds(EVAL_DIR / "thresholds.yml", "nope")
+        thresholds = load_thresholds(EVAL_DIR / "thresholds.toml", "nope")
         assert thresholds["max_p95_latency_ms"] == 12000
 
-    def test_missing_file_is_a_harness_error(self, tmp_path):
-        (tmp_path / "empty.yml").write_text("# nothing\n", encoding="utf-8")
+    def test_empty_file_is_a_harness_error(self, tmp_path):
+        (tmp_path / "empty.toml").write_text("# nothing\n", encoding="utf-8")
         with pytest.raises(HarnessError):
-            load_thresholds(tmp_path / "empty.yml", "nonprod/dev")
+            load_thresholds(tmp_path / "empty.toml", "nonprod/dev")
+
+    def test_malformed_file_is_a_harness_error(self, tmp_path):
+        (tmp_path / "bad.toml").write_text("[defaults\n", encoding="utf-8")
+        with pytest.raises(HarnessError):
+            load_thresholds(tmp_path / "bad.toml", "nonprod/dev")
 
 
 class TestCheck:

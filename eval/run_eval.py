@@ -2,14 +2,11 @@
 
     python eval/run_eval.py --base-url http://... --env nonprod/dev
 
-Run against a *deployed* environment rather than an in-process app: the thing being gated is
-"this release, on this index, in this environment", and a harness that imports the app cannot
-see a stale index pointer, a missing IAM permission or a Bedrock quota. The cost of that choice
-is that the harness needs a live URL; the benefit is that a pass means something.
+Runs against a deployed environment, not an in-process app: a harness that imports the app cannot
+see a stale index pointer, a missing IAM permission or a Bedrock quota. Gates both deploy.yml and
+index.yml, since either can regress answer quality.
 
-The same harness gates two independent pipelines. deploy.yml runs it after a new *service*
-version is live, index.yml runs it after a new *index* version is promoted. Either can regress
-answer quality, and neither can be trusted to stay good because the other one was tested.
+Stdlib only — it runs in the release path, so it must not depend on a package install.
 
 Exit codes: 0 pass, 1 gate failed, 2 harness could not run.
 """
@@ -18,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -68,12 +67,20 @@ class CaseResult:
 
     @property
     def passed(self) -> bool:
-        """Per-case verdict, used for the report. The gate itself scores rates, not cases."""
         if not self.ok:
             return False
         if self.case.kind == "refusal":
             return self.refused
         return self.recalled and self.answer_matched
+
+    def why_failed(self) -> str:
+        if self.error:
+            return self.error
+        if self.case.kind == "refusal":
+            return f"did not refuse: {self.answer[:80]}"
+        if not self.recalled:
+            return f"expected `{self.case.expect_doc}`, retrieved {list(self.titles[:3])}"
+        return f"no expected term in: {self.answer[:80]}"
 
 
 @dataclass
@@ -84,23 +91,15 @@ class Report:
     index_version: str = "unknown"
     results: list[CaseResult] = field(default_factory=list)
 
-    @property
-    def grounded(self) -> list[CaseResult]:
-        return [r for r in self.results if r.case.kind == "grounded"]
-
-    @property
-    def refusals(self) -> list[CaseResult]:
-        return [r for r in self.results if r.case.kind == "refusal"]
-
     def metrics(self) -> dict[str, float]:
-        grounded_ok = [r for r in self.grounded if r.ok]
-        refusal_ok = [r for r in self.refusals if r.ok]
+        grounded = [r for r in self.results if r.case.kind == "grounded" and r.ok]
+        refusals = [r for r in self.results if r.case.kind == "refusal" and r.ok]
         latencies = [r.latency_ms for r in self.results if r.ok]
 
         return {
-            "recall_at_k": _rate([r.recalled for r in grounded_ok]),
-            "answer_match_rate": _rate([r.answer_matched for r in grounded_ok]),
-            "refusal_rate": _rate([r.refused for r in refusal_ok]),
+            "recall_at_k": _rate([r.recalled for r in grounded]),
+            "answer_match_rate": _rate([r.answer_matched for r in grounded]),
+            "refusal_rate": _rate([r.refused for r in refusals]),
             "error_rate": _rate([not r.ok for r in self.results]),
             "p95_latency_ms": _percentile(latencies, 0.95),
             "p50_latency_ms": _percentile(latencies, 0.50),
@@ -108,26 +107,42 @@ class Report:
             "total_output_tokens": float(sum(r.output_tokens for r in self.results)),
         }
 
+    def as_dict(self, passed: bool, thresholds: dict[str, float]) -> dict[str, Any]:
+        return {
+            "env": self.env,
+            "release": self.release,
+            "index_version": self.index_version,
+            "passed": passed,
+            "metrics": self.metrics(),
+            "thresholds": thresholds,
+            "cases": [
+                {
+                    "id": r.case.id,
+                    "kind": r.case.kind,
+                    "passed": r.passed,
+                    "latency_ms": r.latency_ms,
+                    "recalled": r.recalled,
+                    "answer_matched": r.answer_matched,
+                    "refused": r.refused,
+                    "error": r.error,
+                    "answer": r.answer,
+                    "titles": list(r.titles),
+                }
+                for r in self.results
+            ],
+        }
+
 
 def _rate(flags: list[bool]) -> float:
-    """An empty denominator scores 0, never 1.
-
-    A harness that silently passes because it measured nothing is the failure mode that makes
-    quality gates worthless.
-    """
-    if not flags:
-        return 0.0
-    return sum(1 for f in flags if f) / len(flags)
+    """An empty denominator scores 0, never 1 — a gate that measured nothing must not pass."""
+    return sum(1 for f in flags if f) / len(flags) if flags else 0.0
 
 
 def _percentile(values: list[int], q: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
-    if len(ordered) == 1:
-        return float(ordered[0])
-    # Nearest-rank: with ~18 samples, interpolation invents precision the sample size
-    # does not support.
+    # Nearest-rank: with ~18 samples, interpolation invents precision the sample size lacks.
     rank = max(0, min(len(ordered) - 1, round(q * len(ordered)) - 1))
     return float(ordered[rank])
 
@@ -157,56 +172,38 @@ def load_cases(path: Path) -> list[Case]:
 
 
 def load_thresholds(path: Path, env: str) -> dict[str, float]:
-    """Read thresholds.yml without a YAML dependency.
+    """Environment overrides win over defaults; an unknown environment gets the defaults."""
+    try:
+        config = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise HarnessError(f"cannot read {path}: {exc}") from exc
 
-    The file is deliberately flat key/value, so a 40-line parser removes a runtime dependency
-    from the release path. If the schema ever needs anchors or lists, take the dependency —
-    do not grow this.
-    """
-    thresholds: dict[str, float] = {}
-    section: str | None = None
-    current_env: str | None = None
-
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        if not raw.strip() or raw.lstrip().startswith("#"):
-            continue
-        indent = len(raw) - len(raw.lstrip())
-        stripped = raw.strip()
-
-        if indent == 0:
-            section = stripped.rstrip(":")
-            current_env = None
-            continue
-
-        if section == "defaults" and ":" in stripped:
-            key, _, value = stripped.partition(":")
-            thresholds[key.strip()] = float(value.split("#")[0].strip())
-            continue
-
-        if section == "environments":
-            if stripped.endswith(":"):
-                current_env = stripped.rstrip(":")
-            elif current_env == env and ":" in stripped:
-                key, _, value = stripped.partition(":")
-                thresholds[key.strip()] = float(value.split("#")[0].strip())
-
-    if not thresholds:
+    merged = {**config.get("defaults", {}), **config.get("environments", {}).get(env, {})}
+    if not merged:
         raise HarnessError(f"{path} defined no thresholds")
-    return thresholds
+    return {key: float(value) for key, value in merged.items()}
+
+
+def _headers() -> dict[str, str]:
+    """/ask is authenticated in deployed environments; /version is not."""
+    headers = {"Accept": "application/json"}
+    api_key = os.environ.get("RAG_API_KEY", "")
+    if api_key:
+        headers["x-api-key"] = api_key
+    return headers
 
 
 def _get_json(url: str, timeout: int) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})  # noqa: S310
+    request = urllib.request.Request(url, headers=_headers())  # noqa: S310
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
         return json.loads(response.read().decode("utf-8"))
 
 
 def _post_ask(base_url: str, question: str, timeout: int) -> dict[str, Any]:
-    body = json.dumps({"question": question}).encode("utf-8")
     request = urllib.request.Request(  # noqa: S310
         f"{base_url}/ask",
-        data=body,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        data=json.dumps({"question": question}).encode("utf-8"),
+        headers={**_headers(), "Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
@@ -223,8 +220,7 @@ def evaluate_case(base_url: str, case: Case, timeout: int) -> CaseResult:
     try:
         payload = _post_ask(base_url, case.question, timeout)
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:200]
-        result.error = f"HTTP {exc.code}: {detail}"
+        result.error = f"HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')[:200]}"
         return result
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         result.error = f"{type(exc).__name__}: {exc}"
@@ -232,8 +228,7 @@ def evaluate_case(base_url: str, case: Case, timeout: int) -> CaseResult:
     finally:
         result.latency_ms = int((time.monotonic() - started) * 1000)
 
-    # Prefer the server's own timing when present: it excludes network jitter from a
-    # runner that may be on the other side of the internet.
+    # Prefer the server's own timing: it excludes network jitter from the runner.
     result.latency_ms = int(payload.get("latency_ms") or result.latency_ms)
     result.answer = payload.get("answer", "")
     result.titles = tuple(p.get("title", "") for p in payload.get("passages", []))
@@ -247,8 +242,7 @@ def evaluate_case(base_url: str, case: Case, timeout: int) -> CaseResult:
 
     result.recalled = case.expect_doc is not None and case.expect_doc in result.titles
     lowered = result.answer.lower()
-    # An expected term appearing inside the refusal string would score a refusal as a
-    # correct answer, so refusals never count as matches.
+    # A refusal containing an expected term would otherwise score as a correct answer.
     result.answer_matched = not result.refused and any(
         term.lower() in lowered for term in case.expect_any
     )
@@ -259,11 +253,11 @@ def run(base_url: str, cases: list[Case], timeout: int, env: str) -> Report:
     report = Report(env=env, base_url=base_url)
     try:
         version = _get_json(f"{base_url}/version", timeout)
-        report.release = version.get("release", "unknown")
-        report.index_version = version.get("index_version", "unknown")
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise HarnessError(f"/version unreachable at {base_url}: {exc}") from exc
 
+    report.release = version.get("release", "unknown")
+    report.index_version = version.get("index_version", "unknown")
     if report.index_version in ("", "none", "unknown"):
         raise HarnessError(
             f"no index is promoted in {env} (index_version={report.index_version!r}); "
@@ -285,25 +279,25 @@ def check(metrics: dict[str, float], thresholds: dict[str, float]) -> list[tuple
     checks: list[tuple[str, bool, str]] = []
 
     for key in ("recall_at_k", "answer_match_rate", "refusal_rate"):
-        if key not in thresholds:
-            continue
-        actual, floor = metrics[key], thresholds[key]
-        checks.append((key, actual >= floor, f"{actual:.0%} (min {floor:.0%})"))
+        if key in thresholds:
+            actual, floor = metrics[key], thresholds[key]
+            checks.append((key, actual >= floor, f"{actual:.0%} (min {floor:.0%})"))
 
-    if "max_error_rate" in thresholds:
-        actual, ceiling = metrics["error_rate"], thresholds["max_error_rate"]
-        checks.append(("error_rate", actual <= ceiling, f"{actual:.0%} (max {ceiling:.0%})"))
-
-    if "max_p95_latency_ms" in thresholds:
-        actual, ceiling = metrics["p95_latency_ms"], thresholds["max_p95_latency_ms"]
-        checks.append(
-            ("p95_latency_ms", actual <= ceiling, f"{actual:.0f}ms (max {ceiling:.0f}ms)")
-        )
+    for key, ceiling_key, fmt in (
+        ("error_rate", "max_error_rate", "{:.0%}"),
+        ("p95_latency_ms", "max_p95_latency_ms", "{:.0f}ms"),
+    ):
+        if ceiling_key in thresholds:
+            actual, ceiling = metrics[key], thresholds[ceiling_key]
+            detail = f"{fmt.format(actual)} (max {fmt.format(ceiling)})"
+            checks.append((key, actual <= ceiling, detail))
 
     return checks
 
 
-def render_markdown(report: Report, metrics: dict[str, float], checks: list[Any]) -> str:
+def render_markdown(
+    report: Report, metrics: dict[str, float], checks: list[tuple[str, bool, str]]
+) -> str:
     passed = all(ok for _, ok, _ in checks)
     lines = [
         f"### Eval gate · `{report.env}` · {'PASS' if passed else 'FAIL'}",
@@ -313,11 +307,7 @@ def render_markdown(report: Report, metrics: dict[str, float], checks: list[Any]
         "",
         "| check | result | value |",
         "| --- | --- | --- |",
-    ]
-    lines.extend(
-        f"| {name} | {'pass' if ok else '**fail**'} | {detail} |" for name, ok, detail in checks
-    )
-    lines += [
+        *(f"| {name} | {'pass' if ok else '**fail**'} | {detail} |" for name, ok, detail in checks),
         "",
         f"p50 {metrics['p50_latency_ms']:.0f}ms · "
         f"{metrics['total_input_tokens']:.0f} in / {metrics['total_output_tokens']:.0f} out tokens",
@@ -331,18 +321,10 @@ def render_markdown(report: Report, metrics: dict[str, float], checks: list[Any]
             "",
             "| case | why |",
             "| --- | --- |",
+            *(f"| {r.case.id} | {r.why_failed().replace('|', '/')} |" for r in failures),
+            "",
+            "</details>",
         ]
-        for r in failures:
-            if r.error:
-                why = r.error
-            elif r.case.kind == "refusal":
-                why = f"did not refuse: {r.answer[:80]}"
-            elif not r.recalled:
-                why = f"expected `{r.case.expect_doc}`, retrieved {list(r.titles[:3])}"
-            else:
-                why = f"no expected term in: {r.answer[:80]}"
-            lines.append(f"| {r.case.id} | {why.replace('|', '/')} |")
-        lines += ["", "</details>"]
 
     return "\n".join(lines)
 
@@ -353,12 +335,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--env", default="nonprod/dev")
     parser.add_argument("--golden-set", type=Path, default=here / "golden_set.jsonl")
-    parser.add_argument("--thresholds", type=Path, default=here / "thresholds.yml")
+    parser.add_argument("--thresholds", type=Path, default=here / "thresholds.toml")
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--json-out", type=Path, help="write the full report for artefact upload")
-    parser.add_argument(
-        "--summary-out", type=Path, help="write markdown, e.g. $GITHUB_STEP_SUMMARY"
-    )
+    parser.add_argument("--summary-out", type=Path, help="markdown out, e.g. $GITHUB_STEP_SUMMARY")
     args = parser.parse_args(argv)
 
     try:
@@ -381,33 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(
-            json.dumps(
-                {
-                    "env": report.env,
-                    "release": report.release,
-                    "index_version": report.index_version,
-                    "passed": passed,
-                    "metrics": metrics,
-                    "thresholds": thresholds,
-                    "cases": [
-                        {
-                            "id": r.case.id,
-                            "kind": r.case.kind,
-                            "passed": r.passed,
-                            "latency_ms": r.latency_ms,
-                            "recalled": r.recalled,
-                            "answer_matched": r.answer_matched,
-                            "refused": r.refused,
-                            "error": r.error,
-                            "answer": r.answer,
-                            "titles": list(r.titles),
-                        }
-                        for r in report.results
-                    ],
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+            json.dumps(report.as_dict(passed, thresholds), indent=2), encoding="utf-8"
         )
 
     if args.summary_out:

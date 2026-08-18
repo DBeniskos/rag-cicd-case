@@ -1,8 +1,7 @@
 """The index manifest — the contract between the ingestion job and the API.
 
-Both sides import this module rather than declaring the schema twice. The manifest exists to make
-an embedding-model mismatch impossible to miss, and two hand-maintained copies would be free to
-drift, which is exactly the failure it guards against.
+Both sides import this rather than declaring the schema twice, since two copies would be free to
+drift into exactly the mismatch the manifest exists to catch.
 """
 
 from __future__ import annotations
@@ -17,20 +16,12 @@ TABLE_NAME = "passages"
 
 
 def index_prefix(index_version: str) -> str:
-    """S3 key prefix for one index version.
-
-    Versions are immutable: a rebuild writes a new prefix rather than mutating this one, which is
-    what makes rollback a pointer flip instead of a restore.
-    """
+    """S3 prefix for one immutable index version. A rebuild writes a new one, never mutates this."""
     return f"indexes/{index_version}/"
 
 
 class IndexManifest(BaseModel):
-    """How an index was built — enough to diagnose a bad one without rebuilding it.
-
-    ``corpus_hash`` identifies the input documents, so "is the index stale?" is answerable by
-    comparison rather than by guesswork.
-    """
+    """How an index was built. ``corpus_hash`` makes "is this stale?" answerable by comparison."""
 
     index_version: str
     embed_model_id: str

@@ -29,9 +29,7 @@ resource "aws_ecs_task_definition" "api" {
 
       portMappings = [{ containerPort = var.container_port, protocol = "tcp" }]
 
-      # Configuration arrives as plain environment variables because none of it is secret. Real
-      # secrets would use the `secrets` block with a Secrets Manager ARN, which keeps values out
-      # of the task definition and out of `describe-task-definition` output.
+      # Configuration arrives as plain environment variables because none of it is secret.
       environment = [
         { name = "RAG_ENV", value = var.environment },
         { name = "RAG_AWS_REGION", value = var.region },
@@ -46,6 +44,10 @@ resource "aws_ecs_task_definition" "api" {
         { name = "RAG_RELEASE_VERSION", value = var.release_version },
         { name = "RAG_GIT_SHA", value = var.git_sha },
       ]
+
+      # Resolved by the ECS agent at task start, so the value never appears in the task definition
+      # or in `describe-task-definition` output - only the ARN does.
+      secrets = var.container_secrets
 
       logConfiguration = {
         logDriver = "awslogs"

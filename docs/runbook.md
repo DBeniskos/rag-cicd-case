@@ -18,7 +18,6 @@ export AWS_REGION=us-east-1
 ```bash
 curl -s "$(make api-url)/version" | jq
 ```
-
 ```json
 {
   "env": "dev",
@@ -40,8 +39,30 @@ configured — if it disagrees with SSM, the tasks have not restarted since the 
 | answers wrong or irrelevant, no deploy happened | index | §2 |
 | `503 index_unavailable` | index | §2.3 |
 | `503 embedding_model_mismatch` | index | §2.4 |
+| `401 unauthorized` | caller is missing or using a stale API key | §0.1 |
 | `429 model_throttled` | Bedrock capacity | §3 |
 | `502 model_unavailable` | Bedrock config or access | §4 |
+
+### 0.1 Getting the API key
+
+`/ask` requires an `x-api-key` header. `/healthz` and `/version` do not, so triage works without it.
+
+```bash
+make api-key ENV=$ENV
+```
+
+Reads it from Secrets Manager. It is never printed by the pipelines — `deploy.yml` and `index.yml`
+mask it before it can reach a log.
+
+```bash
+curl -s -X POST "$(make api-url)/ask" \
+  -H "x-api-key: $(make api-key)" \
+  -H 'content-type: application/json' \
+  -d '{"question":"What does the relief crew find at the lighthouse?"}'
+```
+
+To rotate: write a new value to the secret, then force a rolling restart so tasks pick it up. The
+old key stops working the moment the new tasks are serving.
 
 ---
 

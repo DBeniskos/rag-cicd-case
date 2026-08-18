@@ -7,7 +7,7 @@
 # The trade-off is deliberate and bounded: tasks have public IPs but no inbound path except the
 # load balancer security group, enforced by security-group reference rather than CIDR. Moving to
 # private subnets later means adding NAT (or VPC endpoints) and flipping one variable — the module
-# interface does not change. See docs/adr/0004-no-nat-gateway.md.
+# interface does not change. See docs/decisions.md.
 
 data "aws_availability_zones" "available" {
   state = "available"

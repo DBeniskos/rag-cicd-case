@@ -1,8 +1,4 @@
-"""Request and response contracts.
-
-These are the API's public surface: the smoke test, the eval harness and the deck all read
-``/version``, so the shape is deliberately stable.
-"""
+"""Request and response contracts. The smoke test and eval harness both read /version."""
 
 from __future__ import annotations
 
@@ -17,7 +13,7 @@ class AskRequest(BaseModel):
 
 
 class Passage(BaseModel):
-    """A retrieved chunk. Returned to the caller so an answer can be audited against its sources."""
+    """A retrieved chunk, returned so an answer can be audited against its sources."""
 
     doc_id: str
     title: str
@@ -26,10 +22,7 @@ class Passage(BaseModel):
 
 
 class TokenUsage(BaseModel):
-    """Per-request token counts, taken from the Bedrock response metadata.
-
-    Emitted on every answer so cost is observable per request rather than only on the monthly bill.
-    """
+    """Emitted per answer, so cost is observable per request rather than only on the bill."""
 
     input_tokens: int = 0
     output_tokens: int = 0
@@ -60,7 +53,7 @@ class HealthResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Machine-readable failures so the smoke test can distinguish causes, not just status codes."""
+    """Machine-readable so callers can distinguish causes, not just status codes."""
 
     code: str
     message: str

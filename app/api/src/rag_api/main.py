@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from secrets import compare_digest
 from typing import TYPE_CHECKING
 
 import structlog
@@ -13,7 +14,7 @@ from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from rag_api.config import NO_INDEX, Settings, get_settings
-from rag_api.generation import ModelThrottledError, ModelUnavailableError, build_generator
+from rag_api.generation import BedrockGenerator, ModelThrottledError, ModelUnavailableError
 from rag_api.retrieval import (
     EmbeddingModelMismatchError,
     IndexUnavailableError,
@@ -33,9 +34,24 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = structlog.get_logger()
 
-# The ALB polls this per task every few seconds. Logging it would be most of the log bill and
+# The ALB polls /healthz per task every few seconds. Logging it would be most of the log bill and
 # none of the signal.
-_UNLOGGED_PATHS = frozenset({"/healthz"})
+_HEALTH_PATH = "/healthz"
+
+
+# Each failure mode maps to the status code that tells a caller what to do about it. The `code` is
+# machine-readable so smoke tests can distinguish causes rather than guess from a status alone.
+class UnauthorizedError(RuntimeError):
+    """Missing or wrong API key."""
+
+
+_ERRORS: dict[type[Exception], tuple[int, str]] = {
+    UnauthorizedError: (401, "unauthorized"),
+    IndexUnavailableError: (503, "index_unavailable"),
+    EmbeddingModelMismatchError: (503, "embedding_model_mismatch"),
+    ModelThrottledError: (429, "model_throttled"),
+    ModelUnavailableError: (502, "model_unavailable"),
+}
 
 router = APIRouter()
 
@@ -44,28 +60,39 @@ router = APIRouter()
 async def healthz() -> HealthResponse:
     """Liveness only.
 
-    Deliberately touches neither the index nor Bedrock. If the health check called the model, a
-    Bedrock outage would fail every health check, drain every target and turn a degraded service
-    into no service. Index and answer quality are gated at release time, not per health poll.
+    Touches neither the index nor Bedrock: a health check that called the model would let a
+    Bedrock outage drain every target and turn a degraded service into no service.
     """
     return HealthResponse(status="ok")
 
 
 @router.get("/version", response_model=VersionResponse, tags=["ops"])
 async def version(request: Request) -> VersionResponse:
-    """What is actually running. The deploy pipeline asserts on this before shifting traffic."""
+    """Reports the index actually loaded, not the one configured. Asserted by the deploy."""
     settings: Settings = request.app.state.settings
     retriever = request.app.state.retriever
     return VersionResponse(
         env=settings.env,
         release=settings.release_version,
         git_sha=settings.git_sha,
-        # Read from the loaded index rather than from configuration, so this reports what is being
-        # served rather than what was requested.
         index_version=retriever.index_version if retriever is not None else NO_INDEX,
         embed_model_id=settings.embed_model_id,
         text_model_id=settings.text_model_id,
     )
+
+
+def _require_api_key(settings: Settings, request: Request) -> None:
+    """Guards /ask only.
+
+    /healthz and /version stay open: the ALB health check cannot present a key, and the smoke test
+    has to be able to prove which release is serving before it has credentials for anything.
+    """
+    if not settings.api_key:
+        return
+    presented = request.headers.get("x-api-key", "")
+    # Constant-time, so a wrong key cannot be recovered by timing the comparison.
+    if not compare_digest(presented, settings.api_key):
+        raise UnauthorizedError("missing or invalid x-api-key header")
 
 
 @router.post(
@@ -73,6 +100,7 @@ async def version(request: Request) -> VersionResponse:
     response_model=AskResponse,
     tags=["inference"],
     responses={
+        401: {"model": ErrorResponse},
         429: {"model": ErrorResponse},
         502: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
@@ -80,6 +108,8 @@ async def version(request: Request) -> VersionResponse:
 )
 async def ask(payload: AskRequest, request: Request) -> AskResponse:
     settings: Settings = request.app.state.settings
+    _require_api_key(settings, request)
+
     retriever = request.app.state.retriever
     generator = request.app.state.generator
 
@@ -110,11 +140,15 @@ async def ask(payload: AskRequest, request: Request) -> AskResponse:
     )
 
 
-def _error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
+async def _handle_known_error(_: Request, exc: Exception) -> JSONResponse:
+    status_code, code = _ERRORS[type(exc)]
+    response = JSONResponse(
         status_code=status_code,
-        content=ErrorResponse(code=code, message=message).model_dump(),
+        content=ErrorResponse(code=code, message=str(exc)).model_dump(),
     )
+    if status_code == 429:
+        response.headers["retry-after"] = "1"
+    return response
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -124,10 +158,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved
-        # A mismatch raises here, before the task reports healthy, so the deployment circuit
-        # breaker rolls it back instead of serving answers grounded in the wrong vector space.
+        # Raises before the task reports healthy, so a mismatch rolls the deployment back rather
+        # than serving answers grounded in the wrong vector space.
         app.state.retriever = build_retriever(resolved)
-        app.state.generator = build_generator(resolved)
+        app.state.generator = BedrockGenerator.from_settings(resolved)
         log.info(
             "startup",
             env=resolved.env,
@@ -162,7 +196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response = await call_next(request)
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
-            if request.url.path not in _UNLOGGED_PATHS:
+            if request.url.path != _HEALTH_PATH:
                 log.info(
                     "http.request",
                     method=request.method,
@@ -173,23 +207,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["x-request-id"] = request_id
         return response
 
-    @app.exception_handler(IndexUnavailableError)
-    async def _index_unavailable(_: Request, exc: IndexUnavailableError) -> JSONResponse:
-        return _error(503, "index_unavailable", str(exc))
-
-    @app.exception_handler(EmbeddingModelMismatchError)
-    async def _embedding_mismatch(_: Request, exc: EmbeddingModelMismatchError) -> JSONResponse:
-        return _error(503, "embedding_model_mismatch", str(exc))
-
-    @app.exception_handler(ModelThrottledError)
-    async def _model_throttled(_: Request, exc: ModelThrottledError) -> JSONResponse:
-        response = _error(429, "model_throttled", str(exc))
-        response.headers["retry-after"] = "1"
-        return response
-
-    @app.exception_handler(ModelUnavailableError)
-    async def _model_unavailable(_: Request, exc: ModelUnavailableError) -> JSONResponse:
-        return _error(502, "model_unavailable", str(exc))
+    for exc_type in _ERRORS:
+        app.add_exception_handler(exc_type, _handle_known_error)
 
     app.include_router(router)
     return app

@@ -127,6 +127,21 @@ variable "text_model_id" {
   default     = "us.amazon.nova-lite-v1:0"
 }
 
+variable "container_secrets" {
+  description = "Secrets Manager values injected by the ECS agent as environment variables."
+  type = list(object({
+    name      = string
+    valueFrom = string
+  }))
+  default = []
+}
+
+variable "secret_arns" {
+  description = "ARNs the execution role may read. Kept separate so the policy is not derived from a computed list."
+  type        = list(string)
+  default     = []
+}
+
 variable "max_output_tokens" {
   description = "Caps the cost of a single runaway request, not just its latency."
   type        = number

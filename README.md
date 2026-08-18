@@ -62,11 +62,10 @@ index gets the same release discipline the code gets.
 The two environments are separate stacks — separate VPCs, load balancers, index buckets, SSM
 namespaces and task roles — sharing one account and one registry. Splitting them across two
 accounts is a stronger blast-radius story and is the documented target state; the account boundary
-is a Terraform variable rather than a rewrite. See
-[ADR-0005](docs/adr/0005-single-account-two-stacks.md).
+is a Terraform variable rather than a rewrite. See [decisions §5](docs/decisions.md).
 
-Full write-up: [docs/design-spec.md](docs/design-spec.md) · decisions: [docs/adr/](docs/adr/) ·
-operations: [docs/runbook.md](docs/runbook.md)
+Full write-up: [docs/design-spec.md](docs/design-spec.md) · decisions:
+[docs/decisions.md](docs/decisions.md) · operations: [docs/runbook.md](docs/runbook.md)
 
 ---
 
@@ -75,20 +74,25 @@ operations: [docs/runbook.md](docs/runbook.md)
 ```
 .
 ├── app/
-│   ├── api/                  FastAPI inference service  (src/, tests/, Dockerfile)
-│   └── ingest/               corpus → chunks → embeddings → versioned index
+│   ├── api/                  FastAPI inference service   (src/, tests/, Dockerfile)
+│   ├── ingest/               corpus → chunks → embeddings → versioned index
+│   └── shared/               manifest schema + Bedrock embedding client, used by both
 ├── infra/
 │   ├── bootstrap/            run once: Terraform state bucket (the only local-state layer)
-│   ├── platform/             shared, rarely changes: GitHub OIDC provider, 3 pipeline roles, ECR
+│   ├── platform/             shared, rarely changes: GitHub OIDC provider, 3 roles, ECR
 │   ├── modules/              reusable Terraform modules
-│   └── envs/{dev,prod}/      thin compositions — tfvars + backend config only
+│   └── envs/                 thin compositions — nonprod/dev, nonprod/stage, prod
 ├── .github/workflows/        ci.yml · release.yml · deploy.yml · index.yml
 ├── pipelines/scripts/        bash implementation shared by humans and CI
-├── eval/                     golden Q&A set, eval harness, promotion thresholds
-├── docs/                     design spec, ADRs, runbook, diagrams
+├── eval/                     golden set, quality gate, per-environment thresholds
+├── docs/                     design-spec.md · decisions.md · runbook.md
+├── data/raw/                 15-document sample corpus
 ├── Makefile                  ergonomic wrapper over pipelines/scripts
 └── AI_USAGE.md               AI-assistance disclosure (required by the case)
 ```
+
+All three Python packages use src-layout (`app/*/src/<package>/`) with tests alongside, so imports
+behave identically in the venv, in CI and inside the containers.
 
 **Why the layers are split this way.** `bootstrap` is the only thing a human runs with admin
 credentials, and it is the only thing with local state — it exists purely to create the remote
@@ -127,7 +131,7 @@ and per region, so it is requested once here.
 > call returns `ResourceNotFoundException` with that explanation in the message. A first-party
 > Amazon model is invokable as soon as IAM allows it, so the default keeps the release path free of
 > a console prerequisite. Switching to Claude is `-var text_model_id=us.anthropic.claude-...` and
-> no code change — the point of [ADR-0004](docs/adr/0004-converse-api.md).
+> no code change — the point of [decisions §4](docs/decisions.md).
 
 > Use a personal AWS account. Nothing in this repo should ever run against a corporate account.
 
@@ -198,10 +202,10 @@ thing. Keeping prod up only for demo windows holds the average near $1/day.
 
 - **No NAT gateway.** Tasks run in public subnets with no inbound path except the ALB security
   group, and reach Bedrock/S3/ECR over the internet gateway. A NAT gateway alone would cost more
-  than everything above combined. See [ADR-0004](docs/adr/0004-no-nat-gateway.md).
+  than everything above combined.
 - 0.25 vCPU / 0.5 GB Fargate tasks; dev scales to `desired_count = 0` when idle.
 - LanceDB files on S3 instead of a managed vector database — see
-  [ADR-0002](docs/adr/0002-lancedb-on-s3-vs-managed-vector-store.md).
+  [decisions §1](docs/decisions.md).
 - An AWS Budget with an alert is created by the observability module, plus a token-spend alarm —
   a runaway prompt loop is an availability incident with an invoice attached.
 
@@ -211,10 +215,11 @@ thing. Keeping prod up only for demo windows holds the average near $1/day.
 
 ## 7. Documentation index
 
+Four documents, deliberately. Anything worth writing down belongs in one of them.
+
 | Document | Contents |
 | --- | --- |
-| [docs/design-spec.md](docs/design-spec.md) | Purpose · Scope · Solution overview · CI/CD flow · Infrastructure · Monitoring · Error handling · Security · Terms |
-| [docs/adr/](docs/adr/) | The trade-offs, one page each |
-| [docs/runbook.md](docs/runbook.md) | Deploy, both rollbacks, alarm response, teardown |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Branching, conventional commits, how to add a module |
-| [AI_USAGE.md](AI_USAGE.md) | Which parts were AI-assisted and how |
+| [docs/design-spec.md](docs/design-spec.md) | The full write-up: problem, architecture, release paths, eval gate, security, observability, scope |
+| [docs/decisions.md](docs/decisions.md) | Six decisions, each with what it costs as well as what it buys |
+| [docs/runbook.md](docs/runbook.md) | Deploy, both rollbacks, Bedrock failure triage, cost control, escalation |
+| [AI_USAGE.md](AI_USAGE.md) | Which parts were AI-assisted, and nine corrections that reached real AWS |

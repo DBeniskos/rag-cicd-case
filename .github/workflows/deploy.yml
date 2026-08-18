@@ -88,6 +88,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      # /ask is authenticated, so the gate needs the key. Masked before it can reach any log, and
+      # never written to a file or an artifact.
+      - name: Fetch the API key
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+        run: |
+          secret_name="$(terraform -chdir="infra/envs/${ENV}" output -raw api_key_secret_name)"
+          key="$(aws secretsmanager get-secret-value \
+            --secret-id "$secret_name" --query SecretString --output text)"
+          echo "::add-mask::$key"
+          echo "RAG_API_KEY=$key" >> "$GITHUB_ENV"
+
       # smoke.sh already proved the right *bytes* are serving. This proves the right *answers*
       # are. A release can pass every unit test, deploy cleanly and still degrade retrieval —
       # a prompt change or an embedding-model bump does exactly that — so the gate runs against

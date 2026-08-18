@@ -159,6 +159,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Fetch the API key
+        if: inputs.action == 'build-and-promote' || inputs.action == 'promote-existing'
+        shell: bash
+        env:
+          ENV_DIR: infra/envs/${{ inputs.environment }}
+        run: |
+          secret_name="$(terraform -chdir="$ENV_DIR" output -raw api_key_secret_name)"
+          key="$(aws secretsmanager get-secret-value \
+            --secret-id "$secret_name" --query SecretString --output text)"
+          echo "::add-mask::$key"
+          echo "RAG_API_KEY=$key" >> "$GITHUB_ENV"
+
       # The index is the other half of the release surface. A corpus change can wreck answer
       # quality without a single line of application code changing, so the same gate that guards
       # a service deploy guards an index promotion.
