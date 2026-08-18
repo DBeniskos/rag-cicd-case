@@ -43,6 +43,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "RAG_MAX_OUTPUT_TOKENS", value = tostring(var.max_output_tokens) },
         { name = "RAG_RELEASE_VERSION", value = var.release_version },
         { name = "RAG_GIT_SHA", value = var.git_sha },
+        { name = "RAG_DOCS_SERVERS", value = var.docs_servers },
       ]
 
       # Resolved by the ECS agent at task start, so the value never appears in the task definition

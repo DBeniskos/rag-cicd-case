@@ -60,6 +60,17 @@ variable "active_index_version" {
   default = "none"
 }
 
+variable "docs_servers" {
+  description = <<-EOT
+    Targets in the docs Servers dropdown. Prod lists both its own listeners so one console can
+    compare the live task set against the one held behind the test listener during a shift.
+    Deliberately no cross-environment entries: a prod console that can call dev invites the
+    mistake of reading dev's answers and believing they came from prod.
+  EOT
+  type        = string
+  default     = "prod (live)=http://rag-prod-alb-464900636.us-east-1.elb.amazonaws.com,prod (inactive task set)=http://rag-prod-alb-464900636.us-east-1.elb.amazonaws.com:8080"
+}
+
 # Prod differs from dev only in retention, task count and deployment controller: same modules,
 # same inputs otherwise. The index store keeps force_destroy off, so a stray destroy cannot take
 # the corpus with it.
@@ -78,6 +89,7 @@ module "environment" {
 
   desired_count       = 2
   deployment_strategy = "BLUE_GREEN"
+  docs_servers        = var.docs_servers
 
   log_retention_days   = 30
   index_retention_days = 90

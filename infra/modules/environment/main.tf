@@ -81,6 +81,7 @@ module "api" {
   canary_percent           = var.canary_percent
   canary_bake_time_minutes = var.canary_bake_time_minutes
   bake_time_minutes        = var.bake_time_minutes
+  docs_servers             = var.docs_servers
 
   error_count_threshold         = var.error_count_threshold
   latency_p95_threshold_seconds = var.latency_p95_threshold_seconds

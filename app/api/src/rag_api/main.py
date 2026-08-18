@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import APIRouter, FastAPI, Request, Response, Security
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
@@ -41,7 +42,8 @@ _HEALTH_PATH = "/healthz"
 
 # Declared purely so the docs render an Authorize box; the check itself stays in _require_api_key,
 # which must run whether or not a caller came through the docs.
-_api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False)
+_API_KEY_HEADER = "x-api-key"
+_api_key_scheme = APIKeyHeader(name=_API_KEY_HEADER, auto_error=False)
 
 
 # Each failure mode maps to the status code that tells a caller what to do about it. The `code` is
@@ -103,7 +105,7 @@ def _require_api_key(settings: Settings, request: Request) -> None:
     """
     if not settings.api_key:
         return
-    presented = request.headers.get("x-api-key", "")
+    presented = request.headers.get(_API_KEY_HEADER, "")
     # Constant-time, so a wrong key cannot be recovered by timing the comparison.
     if not compare_digest(presented, settings.api_key):
         raise UnauthorizedError("missing or invalid x-api-key header")
@@ -190,6 +192,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         log.info("shutdown")
 
+    servers = resolved.docs_server_list
     app = FastAPI(
         title="rag-api",
         version=resolved.release_version,
@@ -197,7 +200,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs" if resolved.docs_enabled else None,
         redoc_url=None,
         openapi_url="/openapi.json" if resolved.docs_enabled else None,
+        servers=servers or None,
+        # Keeps the pasted key in the operator's own browser storage, so it survives a reload.
+        # The alternative — preauthorizeApiKey — would render the secret into a page that is
+        # deliberately unauthenticated, which is the opposite of what the secret is for.
+        swagger_ui_parameters={"persistAuthorization": True},
     )
+
+    # Picking another environment from the Servers dropdown is a cross-origin call, so the browser
+    # blocks it unless those exact origins are allowed. Scoped to the listed targets, never "*".
+    if servers:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[server["url"] for server in servers],
+            allow_methods=["GET", "POST"],
+            allow_headers=["content-type", _API_KEY_HEADER],
+        )
 
     @app.middleware("http")
     async def request_context(

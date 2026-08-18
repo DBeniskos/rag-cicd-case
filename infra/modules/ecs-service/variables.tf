@@ -75,6 +75,12 @@ variable "git_sha" {
 
 # --- deployment strategy ----------------------------------------------------
 
+variable "docs_servers" {
+  description = "Comma-separated 'label=url' targets for the docs Servers dropdown."
+  type        = string
+  default     = ""
+}
+
 variable "deployment_strategy" {
   description = <<-EOT
     ROLLING    = in-place replacement guarded by the deployment circuit breaker (dev).
