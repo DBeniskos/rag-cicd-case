@@ -2,11 +2,11 @@
 # Creates the GitHub OIDC provider, the three pipeline roles and the ECR repositories.
 # Run once, after bootstrap.sh, with admin credentials. Everything after this uses OIDC.
 #
-#   GITHUB_REPOSITORY=owner/repo bash pipelines/scripts/platform.sh
+#   GITHUB_REPOSITORY=owner/repo bash scripts/platform.sh
 #
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLATFORM_DIR="$REPO_ROOT/infra/platform"
 BACKEND_FILE="$REPO_ROOT/infra/backend.hcl"
 
@@ -18,7 +18,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 command -v aws >/dev/null 2>&1 || die "aws CLI not found"
 command -v terraform >/dev/null 2>&1 || die "terraform not found"
-[ -f "$BACKEND_FILE" ] || die "infra/backend.hcl missing — run pipelines/scripts/bootstrap.sh first"
+[ -f "$BACKEND_FILE" ] || die "infra/backend.hcl missing — run scripts/bootstrap.sh first"
 
 account_id="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)" \
   || die "no usable AWS credentials. Run 'aws configure' or export AWS_PROFILE."

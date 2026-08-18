@@ -30,7 +30,7 @@ check aws        "aws --version"          required
 
 echo
 echo "Convenience:"
-check make       "make --version"         optional "(Makefile targets wrap pipelines/scripts/*.sh — call those directly instead)"
+check make       "make --version"         optional "(Makefile targets wrap scripts/*.sh — call those directly instead)"
 
 echo
 echo "Optional:"

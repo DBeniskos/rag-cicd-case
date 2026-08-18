@@ -82,8 +82,7 @@ jobs:
       matrix:
         layer:
           - platform
-          - envs/nonprod/dev
-          - envs/nonprod/stage
+          - envs/dev
           - envs/prod
     steps:
       - uses: actions/checkout@v4

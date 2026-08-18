@@ -98,7 +98,7 @@ This is the core of the design.
         ▼                                 │
  deploy.yml ──► resolve tag to DIGEST     ▼
    terraform apply                     rollback: one pointer write
-   rolling (dev) | blue/green (stage, prod)
+   rolling (dev) | canary (prod)
         │
         ▼
  smoke + EVAL GATE
@@ -113,9 +113,10 @@ sections.
 
 ### Build once, promote by digest
 
-`release.yml` builds each image exactly once and pushes it with three tags: the semantic version,
-`sha-<commit>`, and `latest`. `deploy.yml` never builds. It resolves the requested version tag to
-an **image digest** and deploys that.
+`release.yml` builds each image exactly once and pushes it with two tags: the semantic version and
+`sha-<commit>`. No `latest`, and no moving alias tags — the repository is `IMMUTABLE`, so a tag can
+never be repointed. `deploy.yml` never builds. It resolves the requested version tag to an **image
+digest** and deploys that.
 
 This matters because a tag records what someone *intended* and a digest records which bytes *ran*.
 Rebuilding from the same source in a later pipeline stage produces a different image — different
@@ -124,6 +125,11 @@ rather than a fact. Deploying by digest makes it a fact.
 
 `release.yml` also refuses to publish a version tag that already exists in ECR. Immutable releases
 are only immutable if something enforces it. This guard fired for real during the build, twice.
+
+AWS's own guidance on [semantic versioning for continuous deployment](https://aws.amazon.com/blogs/containers/enable-continuous-deployment-based-on-semantic-versioning-using-aws-app-runner/)
+lands in the same place: tag each release with an exact semver plus a commit-derived tag, and do
+not track `latest`. Where it differs is the trigger — it deploys automatically on an ECR push
+event, whereas this pipeline requires an explicit dispatch and a reviewer on prod.
 
 ### Identity: three roles, not one
 

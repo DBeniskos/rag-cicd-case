@@ -44,3 +44,10 @@ def test_cost_and_latency_caps_are_enforced_at_the_boundary(field, value):
 def test_unknown_environment_variables_are_rejected():
     with pytest.raises(ValidationError):
         Settings(env="staging")
+
+
+# Every environment under infra/envs must appear here, or its tasks crash on startup with a
+# validation error rather than serving. Caught the hard way when a new environment was deployed.
+@pytest.mark.parametrize("env", ["local", "dev", "prod"])
+def test_every_deployed_environment_name_is_accepted(env):
+    assert Settings(env=env).env == env

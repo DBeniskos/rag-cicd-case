@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Promotes or rolls back the index an environment serves.
 #
-#   ENV=nonprod/dev bash pipelines/scripts/promote_index.sh v3-abc1234   # promote
-#   ENV=nonprod/dev bash pipelines/scripts/promote_index.sh --rollback   # previous version
-#   ENV=nonprod/dev bash pipelines/scripts/promote_index.sh --status
+#   ENV=dev bash scripts/promote_index.sh v3-abc1234   # promote
+#   ENV=dev bash scripts/promote_index.sh --rollback   # previous version
+#   ENV=dev bash scripts/promote_index.sh --status
 #
 # Promotion is a pointer flip, not a copy. Index versions are immutable, so going back is the same
 # operation as going forward — seconds, no rebuild, no Bedrock spend. That is the whole reason the
 # index is versioned rather than overwritten in place.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ENV_PATH="${ENV:-}"
 TARGET="${1:-}"
@@ -19,19 +19,17 @@ REGION="${AWS_REGION:-us-east-1}"
 
 die() { printf 'promote: %s\n' "$*" >&2; exit 1; }
 
-[ -n "$ENV_PATH" ] || die "ENV is required, e.g. ENV=nonprod/dev"
+[ -n "$ENV_PATH" ] || die "ENV is required, e.g. ENV=dev"
 [ -n "$TARGET" ] || die "usage: promote_index.sh <index-version|--rollback|--status>"
 
-# The environment name is the last path segment: nonprod/dev -> dev.
-ENV_NAME="${ENV_PATH##*/}"
-PARAM="/${PROJECT}/${ENV_NAME}/active_index_version"
+PARAM="/${PROJECT}/${ENV_PATH}/active_index_version"
 ENV_DIR="$REPO_ROOT/infra/envs/$ENV_PATH"
 
 current="$(aws ssm get-parameter --name "$PARAM" --query 'Parameter.Value' --output text 2>/dev/null)" \
   || die "$PARAM not found — has $ENV_PATH been deployed?"
 
 if [ "$TARGET" = "--status" ]; then
-  printf 'active index in %s: %s\n' "$ENV_NAME" "$current"
+  printf 'active index in %s: %s\n' "$ENV_PATH" "$current"
   # Parameter history is the audit trail: who promoted what, and when.
   aws ssm get-parameter-history --name "$PARAM" --max-items 5 \
     --query 'reverse(Parameters[].{version:Version,value:Value,at:LastModifiedDate})' \
@@ -63,7 +61,7 @@ if [ "$TARGET" != "none" ]; then
 fi
 
 aws ssm put-parameter --name "$PARAM" --value "$TARGET" --type String --overwrite >/dev/null
-printf 'promote: %s now points at %s\n' "$ENV_NAME" "$TARGET"
+printf 'promote: %s now points at %s\n' "$ENV_PATH" "$TARGET"
 
 # The pointer is read at task startup, so running tasks keep serving the old index until they are
 # replaced. Forcing a new deployment is what makes the flip take effect.

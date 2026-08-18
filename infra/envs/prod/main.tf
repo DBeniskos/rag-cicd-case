@@ -36,7 +36,7 @@ variable "region" {
 }
 
 variable "image" {
-  description = "Set by deploy.yml to the digest already proven in dev and stage."
+  description = "Set by deploy.yml to the digest already proven in dev."
   type        = string
 }
 
@@ -60,9 +60,9 @@ variable "active_index_version" {
   default = "none"
 }
 
-# Prod differs from stage only in retention and blast radius: same modules, same deployment
-# controller, same task count. The index store keeps force_destroy off, so a stray destroy cannot
-# take the corpus with it.
+# Prod differs from dev only in retention, task count and deployment controller: same modules,
+# same inputs otherwise. The index store keeps force_destroy off, so a stray destroy cannot take
+# the corpus with it.
 module "environment" {
   source = "../../modules/environment"
 

@@ -99,6 +99,22 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
 
+      # The artifact an auditor asks for months later, when the question is "was this release
+      # affected by CVE-x" and rebuilding the image to find out is no longer possible.
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ vars.ECR_REGISTRY }}/rag-${{ matrix.component }}:${{ steps.v.outputs.version }}
+          format: cyclonedx
+          output: sbom-${{ matrix.component }}.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.component }}-${{ steps.v.outputs.version }}
+          path: sbom-${{ matrix.component }}.json
+          retention-days: 90
+
       - name: Push
         shell: bash
         env:

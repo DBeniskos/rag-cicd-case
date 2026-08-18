@@ -3,8 +3,8 @@ name: deploy
 # Selects an already-published release and puts it in one environment.
 #
 # It builds nothing. The image being deployed was produced by release.yml, and this workflow
-# resolves the tag to a digest so that promoting dev -> stage -> prod provably moves the same
-# bytes rather than rebuilding from the same source and hoping.
+# resolves the tag to a digest so that promoting dev -> prod provably moves the same bytes
+# rather than rebuilding from the same source and hoping.
 
 on:
   workflow_dispatch:
@@ -18,8 +18,7 @@ on:
         required: true
         type: choice
         options:
-          - nonprod/dev
-          - nonprod/stage
+          - dev
           - prod
 
 permissions:
@@ -40,7 +39,7 @@ jobs:
     # environment claim, so the approval gate on `prod` sits in front of the AWS credentials
     # themselves, not merely in front of the job.
     environment:
-      name: ${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
+      name: ${{ inputs.environment }}
       url: ${{ steps.deploy.outputs.api_url }}
 
     permissions:
@@ -80,7 +79,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
-          bash pipelines/scripts/deploy.sh
+          bash scripts/deploy.sh
           api_url="$(terraform -chdir="infra/envs/${ENV}" output -raw api_url)"
           echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
 
@@ -107,8 +106,8 @@ jobs:
       # the live environment rather than an in-process app.
       #
       # It runs after traffic has shifted, which is a deliberate trade. Gating a rolling update
-      # before the shift is not possible without a second endpoint, so dev and stage catch the
-      # regression and the rollback path (documented in docs/runbook.md) is the remedy in prod.
+      # before the shift is not possible without a second endpoint, so dev catches the regression;
+      # in prod the canary alarms bound the exposure and rollback (docs/runbook.md) is the remedy.
       - name: Eval gate
         id: eval
         shell: bash
@@ -128,7 +127,7 @@ jobs:
         if: always() && steps.eval.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
-          name: eval-${{ inputs.environment == 'prod' && 'prod' || 'nonprod' }}-${{ inputs.version }}
+          name: eval-${{ inputs.environment }}-${{ inputs.version }}
           path: eval-report.json
           if-no-files-found: ignore
 

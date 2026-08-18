@@ -6,6 +6,8 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    # Seeds the API key secret. Providers are pinned here rather than in the modules, so every
+    # environment resolves the same versions.
     random = {
       source  = "hashicorp/random"
       version = "~> 3.6"
@@ -13,7 +15,7 @@ terraform {
   }
 
   backend "s3" {
-    key = "envs/nonprod/stage/terraform.tfstate"
+    key = "envs/dev/terraform.tfstate"
   }
 }
 
@@ -23,7 +25,7 @@ provider "aws" {
   default_tags {
     tags = {
       Project     = "rag"
-      Environment = "stage"
+      Environment = "dev"
       Layer       = "environment"
       ManagedBy   = "terraform"
     }
@@ -60,15 +62,14 @@ variable "active_index_version" {
   default = "none"
 }
 
-# Stage is where blue/green is rehearsed. It uses the prod deployment controller and task count so
-# that a canary failure surfaces here rather than in production — a staging environment that
-# deploys differently from prod validates the code but not the release process.
+# Dev: rolling updates with the circuit breaker, one task, short log retention. Fast and cheap,
+# and the first place a bad release is caught.
 module "environment" {
-  source = "../../../modules/environment"
+  source = "../../modules/environment"
 
-  environment = "stage"
+  environment = "dev"
   region      = var.region
-  cidr_block  = "10.21.0.0/16"
+  cidr_block  = "10.20.0.0/16"
 
   image                = var.image
   ingest_image         = var.ingest_image
@@ -76,11 +77,11 @@ module "environment" {
   git_sha              = var.git_sha
   active_index_version = var.active_index_version
 
-  desired_count         = 2
-  deployment_controller = "CODE_DEPLOY"
+  desired_count         = 1
+  deployment_controller = "ECS"
 
-  log_retention_days   = 14
-  index_retention_days = 30
+  log_retention_days   = 7
+  index_retention_days = 14
 }
 
 output "api_url" {

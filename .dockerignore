@@ -3,7 +3,6 @@
 
 .git/
 .github/
-.devcontainer/
 .venv/
 venv/
 
@@ -25,7 +24,7 @@ infra/
 # Not needed at runtime.
 docs/
 eval/
-pipelines/
+scripts/
 **/tests/
 **/__pycache__/
 **/*.pyc

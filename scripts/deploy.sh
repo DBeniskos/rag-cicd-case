@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Deploys one release to one environment.
 #
-#   ENV=nonprod/dev VERSION=v0.1.0 bash pipelines/scripts/deploy.sh
+#   ENV=dev VERSION=v0.1.0 bash scripts/deploy.sh
 #
 # The same script runs locally and in CI. Nothing in the deployment path is reachable only from a
 # workflow, which is what makes an incident at 2am survivable.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_FILE="$REPO_ROOT/infra/backend.hcl"
 
 ENV_PATH="${ENV:-}"
@@ -17,7 +17,7 @@ PROJECT="${PROJECT:-rag}"
 
 die() { printf 'deploy: %s\n' "$*" >&2; exit 1; }
 
-[ -n "$ENV_PATH" ] || die "ENV is required, e.g. ENV=nonprod/dev"
+[ -n "$ENV_PATH" ] || die "ENV is required, e.g. ENV=dev"
 [ -n "$VERSION" ] || die "VERSION is required, e.g. VERSION=v0.1.0"
 [ -f "$BACKEND_FILE" ] || die "infra/backend.hcl missing — run bootstrap.sh first"
 
@@ -76,9 +76,9 @@ if [ "$controller" = "ECS" ]; then
     || die "service did not stabilise — the circuit breaker should have rolled it back; check the events"
 else
   printf 'deploy: blue/green via CodeDeploy — canary, then alarm-gated shift\n'
-  bash "$REPO_ROOT/pipelines/scripts/codedeploy_release.sh" "$ENV_DIR" "$api_image"
+  bash "$REPO_ROOT/scripts/codedeploy_release.sh" "$ENV_DIR" "$api_image"
 fi
 
-bash "$REPO_ROOT/pipelines/scripts/smoke.sh" "$api_url" "$VERSION"
+bash "$REPO_ROOT/scripts/smoke.sh" "$api_url" "$VERSION"
 
 printf 'deploy: %s is serving %s at %s\n' "$ENV_PATH" "$VERSION" "$api_url"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Proves a deployment is serving what the pipeline intended.
 #
-#   bash pipelines/scripts/smoke.sh <base-url> [expected-release]
+#   bash scripts/smoke.sh <base-url> [expected-release]
 #
 # Checked rather than assumed: a deploy can report success while the load balancer still routes to
 # the previous task set, and "the pipeline went green" is not evidence that anything changed.
