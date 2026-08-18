@@ -1,6 +1,6 @@
 # One environment, assembled from the reusable modules.
 #
-# This layer exists so dev, stage and prod are the *same* code with different inputs. If each
+# This layer exists so dev and prod are the *same* code with different inputs. If each
 # environment wired the modules itself, they would drift, and non-prod would stop being a
 # rehearsal for prod — which is the only reason non-prod is worth paying for.
 

@@ -1,16 +1,16 @@
-# Ergonomic wrapper around pipelines/scripts/*.sh — the scripts are the source of truth, so a
-# machine without make (or a CI runner) loses no capability. Every target below runs the same
-# command the corresponding workflow does; nothing in the deployment path is make-only.
+# Ergonomic wrapper: targets either call scripts/*.sh or run terraform, pytest and the AWS CLI
+# directly. The scripts and the workflows remain the source of truth, so a machine without make —
+# or a CI runner — loses no capability. Nothing in the deployment path is make-only.
 SHELL       := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
 # Environments are addressed by their path under infra/envs, because that is what Terraform, the
 # workflow inputs and the state key all use. One identifier, no translation table.
-ENV        ?= nonprod/dev
+ENV        ?= dev
 AWS_REGION ?= us-east-1
 VERSION    ?=
-SCRIPTS    := pipelines/scripts
+SCRIPTS    := scripts
 ENV_DIR     = infra/envs/$(ENV)
 PY         := python
 
@@ -38,13 +38,13 @@ platform: ## Apply the shared layer: OIDC provider, pipeline roles, ECR (once pe
 
 # ---- environments ------------------------------------------------------------
 
-init: ## terraform init for an environment (ENV=nonprod/dev)
+init: ## terraform init for an environment (ENV=dev)
 	@terraform -chdir=$(ENV_DIR) init -input=false -reconfigure -backend-config="$(CURDIR)/infra/backend.hcl"
 
 plan: init ## terraform plan for an environment
 	@terraform -chdir=$(ENV_DIR) plan -input=false
 
-deploy: ## Deploy a published release (ENV=nonprod/dev VERSION=v0.1.0)
+deploy: ## Deploy a published release (ENV=dev VERSION=v0.1.0)
 	@bash $(SCRIPTS)/deploy.sh
 
 api-url: ## Print the environment's base URL
@@ -84,7 +84,7 @@ rollback-index: ## Flip the index pointer back to the previous version
 
 # The image variables have no defaults by design, so destroy has to supply throwaway values.
 # Making them optional would let a real apply run with a placeholder image.
-destroy: init ## Tear an environment down (ENV=nonprod/dev) — prompts before destroying
+destroy: init ## Tear an environment down (ENV=dev) — prompts before destroying
 	@terraform -chdir=$(ENV_DIR) destroy \
 	  -var "image=placeholder/rag-api:destroy" \
 	  -var "ingest_image=placeholder/rag-ingest:destroy"

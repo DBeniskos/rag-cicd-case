@@ -92,7 +92,7 @@ class TestCaseResult:
 
 class TestMetrics:
     def test_errored_cases_are_excluded_from_quality_but_counted_as_errors(self):
-        report = Report(env="nonprod/dev", base_url="http://x")
+        report = Report(env="dev", base_url="http://x")
         report.results = [
             CaseResult(case=_case(), recalled=True, answer_matched=True, latency_ms=100),
             CaseResult(case=_case(), error="HTTP 500", latency_ms=50),
@@ -107,13 +107,13 @@ class TestMetrics:
 
 class TestThresholds:
     def test_environment_overrides_default(self):
-        thresholds = load_thresholds(EVAL_DIR / "thresholds.toml", "nonprod/dev")
+        thresholds = load_thresholds(EVAL_DIR / "thresholds.toml", "dev")
         assert thresholds["recall_at_k"] == 0.90
         assert thresholds["max_p95_latency_ms"] == 20000
         assert thresholds["answer_match_rate"] == 0.70
 
     def test_prod_is_stricter_than_dev(self):
-        dev = load_thresholds(EVAL_DIR / "thresholds.toml", "nonprod/dev")
+        dev = load_thresholds(EVAL_DIR / "thresholds.toml", "dev")
         prod = load_thresholds(EVAL_DIR / "thresholds.toml", "prod")
         assert prod["max_p95_latency_ms"] < dev["max_p95_latency_ms"]
         assert prod["answer_match_rate"] > dev["answer_match_rate"]
@@ -125,12 +125,12 @@ class TestThresholds:
     def test_empty_file_is_a_harness_error(self, tmp_path):
         (tmp_path / "empty.toml").write_text("# nothing\n", encoding="utf-8")
         with pytest.raises(HarnessError):
-            load_thresholds(tmp_path / "empty.toml", "nonprod/dev")
+            load_thresholds(tmp_path / "empty.toml", "dev")
 
     def test_malformed_file_is_a_harness_error(self, tmp_path):
         (tmp_path / "bad.toml").write_text("[defaults\n", encoding="utf-8")
         with pytest.raises(HarnessError):
-            load_thresholds(tmp_path / "bad.toml", "nonprod/dev")
+            load_thresholds(tmp_path / "bad.toml", "dev")
 
 
 class TestCheck:
@@ -201,7 +201,7 @@ class TestMain:
                 "--base-url",
                 "http://127.0.0.1:9",  # discard port, refuses immediately
                 "--env",
-                "nonprod/dev",
+                "dev",
                 "--timeout",
                 "2",
                 "--json-out",
@@ -214,6 +214,6 @@ class TestMain:
 
 class TestJsonReportShape:
     def test_report_is_serialisable(self):
-        report = Report(env="nonprod/dev", base_url="http://x")
+        report = Report(env="dev", base_url="http://x")
         report.results = [CaseResult(case=_case(), recalled=True, answer_matched=True)]
         json.dumps(report.metrics())

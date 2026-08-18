@@ -1,4 +1,4 @@
-# Consumed by pipelines/scripts/bootstrap.sh to write the backend config every other layer uses,
+# Consumed by scripts/bootstrap.sh to write the backend config every other layer uses,
 # so the bucket name is never copied by hand into a second place.
 
 output "state_bucket" {

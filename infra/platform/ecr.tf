@@ -1,8 +1,8 @@
 # One registry, one repository per independently releasable component.
 #
-# Tags are immutable: a deployed tag can never be repointed at different bytes, so "which code is
-# in prod?" has exactly one answer. The pipeline still applies moving dev/prod alias tags for
-# humans, which is why deploys resolve and pin the digest rather than trusting the tag.
+# Tags are immutable: a released tag can never be repointed at different bytes, so "which code is
+# in prod?" has exactly one answer. Deploys still resolve the tag to a digest before applying, so
+# what runs is pinned to bytes rather than to a label.
 
 resource "aws_ecr_repository" "component" {
   for_each = toset(var.components)

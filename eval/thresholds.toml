@@ -33,12 +33,9 @@ max_p95_latency_ms = 12000
 
 # Dev exists to find failures early, so it runs the same checks with more tolerance for a cold
 # Fargate task and an unwarmed model.
-[environments."nonprod/dev"]
+[environments.dev]
 max_p95_latency_ms = 20000
 answer_match_rate = 0.70
-
-[environments."nonprod/stage"]
-max_p95_latency_ms = 15000
 
 [environments.prod]
 recall_at_k = 0.90

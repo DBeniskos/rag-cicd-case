@@ -2,10 +2,14 @@
 # It holds what must exist before anything else can: the bucket every other layer stores its
 # state in, and the cost budget guarding the account. Run it once, then never again.
 #
-#   bash pipelines/scripts/bootstrap.sh
+#   bash scripts/bootstrap.sh
 #
 # Terraform >= 1.11 locks state with a lockfile object in S3, so there is no DynamoDB table here.
 # That is one less resource to provision, pay for and forget to delete.
+#
+# State stays local rather than being migrated into the bucket it creates. Self-hosting it is a
+# common pattern, but it makes teardown circular, and these resources are prevent_destroy and
+# never change — so a lost state file costs an import, not an outage.
 
 data "aws_caller_identity" "current" {}
 

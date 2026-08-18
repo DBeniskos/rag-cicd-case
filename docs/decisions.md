@@ -52,8 +52,10 @@ in place at deploy time** (destroys the previous index, so there is nothing to r
 
 **Decision.** The index has its own version scheme, pipeline, and rollback path.
 
-- **Version identity** — `v<n>-<corpus-hash>`. A counter so ordering is obvious to a human at 2am,
-  a hash so an identical corpus is recognisable as such.
+- **Version identity** — `v<n>-<git-sha>`. A counter so ordering is obvious to a human at 2am, and
+  the SHA of the code that built it, so a bad index leads straight back to the chunking or
+  embedding change responsible. Semver is deliberately not used here: an index is data, and
+  "backward-incompatible" has no meaning for a rebuilt embedding set.
 - **Immutability** — written once. `manifest.json` uploads **last**, so a partially uploaded index
   has no manifest and is never loadable. A multi-file upload behaves atomically for readers.
 - **Compatibility** — the API refuses an index whose manifest declares a different embedding model
@@ -65,26 +67,32 @@ job needs its own IAM role, since it is the only principal permitted to write an
 
 ---
 
-## 3. Rolling deploys in dev, blue/green in stage and prod
+## 3. Rolling deploys in dev, canary in prod
 
-| | dev | stage | prod |
-| --- | --- | --- | --- |
-| Controller | `ECS` rolling | `CODE_DEPLOY` | `CODE_DEPLOY` |
-| Traffic shift | in place | 10% canary → 5 min bake → 100% | same |
-| Rollback trigger | circuit breaker | alarm on the *new* target group | same |
-| Approval | none | none | GitHub environment reviewer |
+| | dev | prod |
+| --- | --- | --- |
+| Controller | `ECS` rolling | `CODE_DEPLOY` blue/green |
+| Traffic shift | in place | 10% canary → 5 min bake → 100% |
+| Rollback trigger | circuit breaker | alarm on the *new* target group |
+| Approval | none | GitHub environment reviewer |
 
 **Dev uses rolling updates.** Its purpose is fast feedback, and a second target group doubles ALB
 rules and cost for an environment where a minute of degradation is free. The circuit breaker
 already covers the failure dev actually produces: a task that will not start.
 
-**Stage and prod use blue/green** because the circuit breaker cannot catch a task that *starts
-healthy and then serves badly* — the characteristic RAG failure, where the container is up,
-`/healthz` is green, and every answer is wrong. Alarms on the replacement target group catch that
-while only 10% of traffic is exposed.
+**Prod uses a canary** because the circuit breaker cannot catch a task that *starts healthy and
+then serves badly* — the characteristic RAG failure, where the container is up, `/healthz` is
+green, and every answer is wrong. Alarms on the replacement target group catch that while only
+10% of traffic is exposed, and the previous task set stays alive for five minutes afterwards, so
+rollback is a traffic shift rather than a redeploy.
 
-**What it costs.** Two extra target groups and a CodeDeploy application per blue/green
-environment. Rolling and blue/green fail differently, so the runbook documents them separately.
+**What it costs, and what we accept.** Two environments means prod's release *mechanism* is never
+rehearsed before it runs in prod: dev proves the application, not the canary. That is a real gap
+and we took it deliberately — a third environment costs a permanently running ALB and two Fargate
+tasks to rehearse a mechanism that already carries its own safety net in alarm-triggered
+auto-rollback and a five-minute window where reverting is instant. For a case study bounded by
+cost that is the right trade; for a programme with real users, stage comes back and the answer
+flips.
 
 ---
 
@@ -125,7 +133,7 @@ Switching back to Claude needs only the account's Anthropic form approved, then 
 study runs in a single personal account, and building an Organizations landing zone would add
 scope to an exercise whose subject is the pipeline.
 
-**Decision.** Nonprod and prod are fully separate Terraform stacks in one account, with the
+**Decision.** Dev and prod are fully separate Terraform stacks in one account, with the
 account boundary confined to a few variables so splitting later is configuration, not a rewrite.
 
 **Separate per environment:** VPC, ALB, ECS cluster and service, task and execution roles, index

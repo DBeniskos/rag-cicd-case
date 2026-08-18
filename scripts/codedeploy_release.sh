@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Drives one CodeDeploy blue/green release and waits for the traffic shift to finish.
 #
-#   bash pipelines/scripts/codedeploy_release.sh <env-dir> <image>
+#   bash scripts/codedeploy_release.sh <env-dir> <image>
 #
 # Split out of deploy.sh because the blue/green path is where a release actually gets interesting:
 # it can succeed, fail, or be reversed by an alarm while it is still running, and each of those

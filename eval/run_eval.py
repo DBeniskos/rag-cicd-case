@@ -1,6 +1,6 @@
 """Retrieval and answer quality gate for the RAG service.
 
-    python eval/run_eval.py --base-url http://... --env nonprod/dev
+    python eval/run_eval.py --base-url http://... --env dev
 
 Runs against a deployed environment, not an in-process app: a harness that imports the app cannot
 see a stale index pointer, a missing IAM permission or a Bedrock quota. Gates both deploy.yml and
@@ -333,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     here = Path(__file__).parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
-    parser.add_argument("--env", default="nonprod/dev")
+    parser.add_argument("--env", default="dev")
     parser.add_argument("--golden-set", type=Path, default=here / "golden_set.jsonl")
     parser.add_argument("--thresholds", type=Path, default=here / "thresholds.toml")
     parser.add_argument("--timeout", type=int, default=60)

@@ -7,7 +7,7 @@ Every command below runs the same script the pipeline runs. Nothing in the recov
 reachable only from a GitHub workflow.
 
 ```bash
-export ENV=nonprod/dev            # or nonprod/stage, or prod
+export ENV=dev            # or prod
 export AWS_REGION=us-east-1
 ```
 
@@ -75,13 +75,13 @@ reaches a healthy state. If tasks are healthy but *behaving* badly, roll forward
 release explicitly:
 
 ```bash
-gh workflow run deploy.yml -f version=v0.5.0 -f environment=nonprod/dev
+gh workflow run deploy.yml -f version=v0.5.0 -f environment=dev
 ```
 
 This is not a rebuild. `deploy.sh` resolves `v0.5.0` to the digest already in ECR, so the bytes
 that ran before are the bytes that run again.
 
-### 1.2 Stage and prod — blue/green
+### 1.2 Prod — canary (blue/green)
 
 **If the deployment is still in progress,** the alarms attached to the deployment group abort it
 automatically and shift traffic back to the original task set. To stop it immediately:
@@ -236,7 +236,7 @@ The ALB still costs ~$0.60/day. To stop that too, destroy the environment — st
 the index bucket is versioned, so `make deploy` rebuilds it:
 
 ```bash
-make destroy ENV=nonprod/dev
+make destroy ENV=dev
 ```
 
 A monthly budget alarm at $20 is created by `bootstrap.sh` and emails on 80% actual and 100%
@@ -252,4 +252,4 @@ rather than left to the model.
 | --- | --- |
 | prod down, cause unknown | roll back the service (§1.2), then the index (§2.2), in that order — service rollback is faster to verify |
 | both rolled back and still down | the fault is in shared infrastructure: ALB, VPC, or Bedrock regional availability |
-| eval gate failing but the service is healthy | not an outage. Leave it deployed in dev, revert in stage/prod, and investigate with the uploaded `eval-report.json` |
+| eval gate failing but the service is healthy | not an outage. Leave it deployed in dev, revert in prod, and investigate with the uploaded `eval-report.json` |

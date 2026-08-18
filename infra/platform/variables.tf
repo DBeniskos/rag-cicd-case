@@ -26,7 +26,7 @@ variable "github_repository" {
 #   repo:owner@156813366/repo@1332120918:ref:refs/heads/main
 # Supplying the ids pins trust to the identity rather than the name, so deleting and recreating a
 # repository with the same name no longer satisfies the policy. Discovered automatically by
-# pipelines/scripts/platform.sh.
+# scripts/platform.sh.
 variable "github_owner_id" {
   description = "Numeric GitHub owner id. Empty falls back to the older name-based subject claim."
   type        = string

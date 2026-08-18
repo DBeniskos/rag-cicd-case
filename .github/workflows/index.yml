@@ -14,8 +14,7 @@ on:
         required: true
         type: choice
         options:
-          - nonprod/dev
-          - nonprod/stage
+          - dev
           - prod
       action:
         description: "What to do"
@@ -44,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
 
     environment:
-      name: ${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
+      name: ${{ inputs.environment }}
 
     permissions:
       contents: read
@@ -83,7 +82,7 @@ jobs:
         shell: bash
         env:
           ENV: ${{ inputs.environment }}
-        run: bash pipelines/scripts/promote_index.sh --status
+        run: bash scripts/promote_index.sh --status
 
       # Runs the ingestion job as a one-off ECS task and waits for it. The task has its own role:
       # the pipeline can start it, but only the task itself can write an index.
@@ -135,14 +134,14 @@ jobs:
         run: |
           version="${{ steps.build.outputs.version || inputs.index_version }}"
           [ -n "$version" ] || { echo "::error::index_version is required for promote-existing"; exit 1; }
-          bash pipelines/scripts/promote_index.sh "$version"
+          bash scripts/promote_index.sh "$version"
 
       - name: Rollback
         if: inputs.action == 'rollback'
         shell: bash
         env:
           ENV: ${{ inputs.environment }}
-        run: bash pipelines/scripts/promote_index.sh --rollback
+        run: bash scripts/promote_index.sh --rollback
 
       - name: Verify what is being served
         if: inputs.action != 'status'
@@ -152,7 +151,7 @@ jobs:
         run: |
           api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url)"
           echo "api_url=$api_url" >> "$GITHUB_ENV"
-          bash pipelines/scripts/smoke.sh "$api_url"
+          bash scripts/smoke.sh "$api_url"
 
       - uses: actions/setup-python@v5
         if: inputs.action == 'build-and-promote' || inputs.action == 'promote-existing'
@@ -194,7 +193,7 @@ jobs:
         if: always() && steps.eval.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
-          name: eval-index-${{ inputs.environment == 'prod' && 'prod' || 'nonprod' }}-${{ github.run_id }}
+          name: eval-index-${{ inputs.environment }}-${{ github.run_id }}
           path: eval-report.json
           if-no-files-found: ignore
 

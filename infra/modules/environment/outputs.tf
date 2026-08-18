@@ -71,10 +71,6 @@ output "codedeploy_deployment_group_name" {
   value = try(module.codedeploy[0].deployment_group_name, null)
 }
 
-output "rollback_alarm_names" {
-  value = try(module.codedeploy[0].alarm_names, [])
-}
-
 output "ingest_task_family" {
   value = module.ingest.task_definition_family
 }

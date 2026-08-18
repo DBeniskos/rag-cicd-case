@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Uploads the source corpus for one environment.
 #
-#   ENV=nonprod/dev bash pipelines/scripts/seed_corpus.sh                      # committed sample
-#   ENV=nonprod/dev bash pipelines/scripts/seed_corpus.sh ~/wiki_movie_plots.csv
+#   ENV=dev bash scripts/seed_corpus.sh                      # committed sample
+#   ENV=dev bash scripts/seed_corpus.sh ~/wiki_movie_plots.csv
 #
 # The corpus lives under raw/ and is never expired by the lifecycle rule: indexes are rebuildable
 # from it, but it is not rebuildable from them.
@@ -16,7 +16,7 @@ KEY="${CORPUS_KEY:-raw/movie_plots.csv}"
 
 die() { printf 'seed: %s\n' "$*" >&2; exit 1; }
 
-[ -n "$ENV_PATH" ] || die "ENV is required, e.g. ENV=nonprod/dev"
+[ -n "$ENV_PATH" ] || die "ENV is required, e.g. ENV=dev"
 [ -f "$SOURCE" ] || die "corpus not found: $SOURCE"
 
 ENV_DIR="$REPO_ROOT/infra/envs/$ENV_PATH"

@@ -81,14 +81,13 @@ Full write-up: [docs/design-spec.md](docs/design-spec.md) · decisions:
 │   ├── bootstrap/            run once: Terraform state bucket (the only local-state layer)
 │   ├── platform/             shared, rarely changes: GitHub OIDC provider, 3 roles, ECR
 │   ├── modules/              reusable Terraform modules
-│   └── envs/                 thin compositions — nonprod/dev, nonprod/stage, prod
+│   └── envs/                 thin compositions — dev, prod
 ├── .github/workflows/        ci.yml · release.yml · deploy.yml · index.yml
-├── pipelines/scripts/        bash implementation shared by humans and CI
+├── scripts/                  bash implementation shared by humans and CI
 ├── eval/                     golden set, quality gate, per-environment thresholds
 ├── docs/                     design-spec.md · decisions.md · runbook.md
 ├── data/raw/                 15-document sample corpus
-├── Makefile                  ergonomic wrapper over pipelines/scripts
-└── AI_USAGE.md               AI-assistance disclosure (required by the case)
+└── Makefile                  ergonomic wrapper over scripts
 ```
 
 All three Python packages use src-layout (`app/*/src/<package>/`) with tests alongside, so imports
@@ -100,7 +99,7 @@ state bucket. `platform` holds what is shared across environments and changes ra
 registry). `envs/*` holds what is duplicated per environment and changes often. The blast radius of
 a bad `envs/dev` apply therefore stops at dev.
 
-**Why `pipelines/scripts` and not logic inside the workflow YAML.** The workflows are thin: they
+**Why `scripts` and not logic inside the workflow YAML.** The workflows are thin: they
 handle identity, inputs and artifacts, then call the same script a human would call. Nothing in the
 deployment path is reachable only from CI, which is what makes an incident at 2am survivable.
 
@@ -114,7 +113,7 @@ deployment path is reachable only from CI, which is what makes an incident at 2a
 | Terraform | ≥ 1.11 | all IaC (uses native S3 state locking — no DynamoDB table) |
 | Python | 3.12 target, ≥ 3.11 to run tests locally | app + eval harness |
 | Docker | any recent | local image builds (**optional** — CI builds the real artifacts) |
-| Git Bash / WSL | — | running `pipelines/scripts/*.sh` on Windows |
+| Git Bash / WSL | — | running `scripts/*.sh` on Windows |
 
 One AWS account and **Bedrock model access enabled in `us-east-1`** for
 `amazon.titan-embed-text-v2:0` and `amazon.nova-lite-v1:0`
@@ -135,21 +134,10 @@ and per region, so it is requested once here.
 
 > Use a personal AWS account. Nothing in this repo should ever run against a corporate account.
 
-### The zero-setup option
-
-This repo ships a dev container, so you can skip the table above entirely:
-
-**Code → Codespaces → Create codespace**, or locally via *Dev Containers: Reopen in Container*.
-
-You get Python 3.12, Terraform 1.15.8, Docker, tflint, the AWS CLI and the GitHub CLI already
-pinned to the versions CI uses, with dependencies installed. This is the recommended path on a
-managed workstation where Docker or WSL2 cannot be installed — and it means a reviewer can run
-the tests without installing anything.
-
 Check whichever machine you are on:
 
 ```bash
-bash pipelines/scripts/check_tools.sh
+bash scripts/check_tools.sh
 ```
 
 ---
@@ -158,10 +146,10 @@ bash pipelines/scripts/check_tools.sh
 
 ```bash
 # 0. one-time, with admin credentials — creates the Terraform state bucket
-bash pipelines/scripts/bootstrap.sh
+bash scripts/bootstrap.sh
 
 # 1. one-time — GitHub OIDC provider, the 3 pipeline roles, ECR repositories
-bash pipelines/scripts/platform.sh
+bash scripts/platform.sh
 
 # 2. from here on, everything runs through the pipeline
 #    Actions → release.yml   (build + push a versioned image)
@@ -178,8 +166,9 @@ make smoke  ENV=dev
 make destroy ENV=dev
 ```
 
-`make` is a convenience only — every target is a one-line wrapper around `pipelines/scripts/*.sh`,
-so a machine without `make` loses nothing.
+`make` is a convenience only. Targets either wrap `scripts/*.sh` or call `terraform`, `pytest` and
+the AWS CLI directly — nothing in the deployment path is reachable *only* through `make`, so a
+machine without it loses no capability.
 
 ---
 
@@ -215,11 +204,10 @@ thing. Keeping prod up only for demo windows holds the average near $1/day.
 
 ## 7. Documentation index
 
-Four documents, deliberately. Anything worth writing down belongs in one of them.
+Three documents, deliberately. Anything worth writing down belongs in one of them.
 
 | Document | Contents |
 | --- | --- |
 | [docs/design-spec.md](docs/design-spec.md) | The full write-up: problem, architecture, release paths, eval gate, security, observability, scope |
 | [docs/decisions.md](docs/decisions.md) | Six decisions, each with what it costs as well as what it buys |
 | [docs/runbook.md](docs/runbook.md) | Deploy, both rollbacks, Bedrock failure triage, cost control, escalation |
-| [AI_USAGE.md](AI_USAGE.md) | Which parts were AI-assisted, and nine corrections that reached real AWS |
