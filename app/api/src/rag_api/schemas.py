@@ -11,6 +11,12 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
     top_k: int | None = Field(default=None, ge=1, le=20)
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [{"question": "What happens to the understudy?", "top_k": 4}]
+        }
+    }
+
 
 class Passage(BaseModel):
     """A retrieved chunk, returned so an answer can be audited against its sources."""
@@ -47,9 +53,42 @@ class VersionResponse(BaseModel):
     embed_model_id: str
     text_model_id: str
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "env": "prod",
+                    "release": "v0.9.0",
+                    "git_sha": "7b23b5f",
+                    "index_version": "v1-f2e9a6b",
+                    "embed_model_id": "amazon.titan-embed-text-v2:0",
+                    "text_model_id": "us.amazon.nova-lite-v1:0",
+                }
+            ]
+        }
+    }
+
 
 class HealthResponse(BaseModel):
+    """Liveness plus enough identity to tell which environment and task set answered."""
+
     status: Literal["ok"]
+    env: str
+    release: str
+    index_version: str
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "status": "ok",
+                    "env": "prod",
+                    "release": "v0.9.0",
+                    "index_version": "v1-f2e9a6b",
+                }
+            ]
+        }
+    }
 
 
 class ErrorResponse(BaseModel):

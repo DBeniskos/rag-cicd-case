@@ -10,8 +10,9 @@ from secrets import compare_digest
 from typing import TYPE_CHECKING
 
 import structlog
-from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request, Response, Security
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 
 from rag_api.config import NO_INDEX, Settings, get_settings
 from rag_api.generation import BedrockGenerator, ModelThrottledError, ModelUnavailableError
@@ -38,6 +39,10 @@ log = structlog.get_logger()
 # none of the signal.
 _HEALTH_PATH = "/healthz"
 
+# Declared purely so the docs render an Authorize box; the check itself stays in _require_api_key,
+# which must run whether or not a caller came through the docs.
+_api_key_scheme = APIKeyHeader(name="x-api-key", auto_error=False)
+
 
 # Each failure mode maps to the status code that tells a caller what to do about it. The `code` is
 # machine-readable so smoke tests can distinguish causes rather than guess from a status alone.
@@ -57,13 +62,22 @@ router = APIRouter()
 
 
 @router.get("/healthz", response_model=HealthResponse, tags=["ops"])
-async def healthz() -> HealthResponse:
-    """Liveness only.
+async def healthz(request: Request) -> HealthResponse:
+    """Liveness, plus which environment and index answered.
 
     Touches neither the index nor Bedrock: a health check that called the model would let a
-    Bedrock outage drain every target and turn a degraded service into no service.
+    Bedrock outage drain every target and turn a degraded service into no service. The identity
+    fields are read from memory, so they cost nothing and make it obvious during a blue/green
+    shift which task set replied.
     """
-    return HealthResponse(status="ok")
+    settings: Settings = request.app.state.settings
+    retriever = request.app.state.retriever
+    return HealthResponse(
+        status="ok",
+        env=settings.env,
+        release=settings.release_version,
+        index_version=retriever.index_version if retriever is not None else NO_INDEX,
+    )
 
 
 @router.get("/version", response_model=VersionResponse, tags=["ops"])
@@ -99,6 +113,7 @@ def _require_api_key(settings: Settings, request: Request) -> None:
     "/ask",
     response_model=AskResponse,
     tags=["inference"],
+    dependencies=[Security(_api_key_scheme)],
     responses={
         401: {"model": ErrorResponse},
         429: {"model": ErrorResponse},
@@ -107,6 +122,7 @@ def _require_api_key(settings: Settings, request: Request) -> None:
     },
 )
 async def ask(payload: AskRequest, request: Request) -> AskResponse:
+    """Answer a question from the promoted index. Requires the x-api-key header."""
     settings: Settings = request.app.state.settings
     _require_api_key(settings, request)
 
@@ -174,15 +190,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         log.info("shutdown")
 
-    is_prod = resolved.env == "prod"
     app = FastAPI(
         title="rag-api",
         version=resolved.release_version,
         lifespan=lifespan,
-        # No interactive docs or schema in prod: it is free attack surface on a public ALB.
-        docs_url=None if is_prod else "/docs",
+        docs_url="/docs" if resolved.docs_enabled else None,
         redoc_url=None,
-        openapi_url=None if is_prod else "/openapi.json",
+        openapi_url="/openapi.json" if resolved.docs_enabled else None,
     )
 
     @app.middleware("http")
