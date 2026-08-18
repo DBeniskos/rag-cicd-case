@@ -1,9 +1,11 @@
 # One Secrets Manager secret, wired to the environment variable the container expects.
 #
-# The value is generated here rather than committed anywhere, and `ignore_changes` means a rotation
-# performed out of band is not reverted by the next apply. The generated value does land in
-# Terraform state, which is why state lives in an encrypted, access-controlled bucket rather than
-# on a laptop.
+# The value is written but never read back: `secret_string_wo` is a write-only attribute, so it is
+# absent from state and refresh does not call GetSecretValue. That matters because the CI role
+# carries an explicit Deny on that action - without this, every plan would fail on the guardrail
+# that exists to stop CI reading secret material.
+#
+# Rotation is a bump of secret_string_wo_version, or a write straight to Secrets Manager.
 
 resource "random_password" "value" {
   length  = var.value_length
@@ -26,12 +28,9 @@ resource "aws_secretsmanager_secret" "this" {
 }
 
 resource "aws_secretsmanager_secret_version" "this" {
-  secret_id     = aws_secretsmanager_secret.this.id
-  secret_string = random_password.value.result
-
-  lifecycle {
-    ignore_changes = [secret_string]
-  }
+  secret_id                = aws_secretsmanager_secret.this.id
+  secret_string_wo         = random_password.value.result
+  secret_string_wo_version = var.value_version
 }
 
 # A resource policy in addition to the roles' own IAM policies. Two independent grants have to

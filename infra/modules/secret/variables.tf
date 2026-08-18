@@ -42,3 +42,9 @@ variable "value_length" {
   type    = number
   default = 48
 }
+
+variable "value_version" {
+  description = "Bump to rotate. Write-only values cannot be diffed, so this is what triggers a write."
+  type        = number
+  default     = 1
+}
