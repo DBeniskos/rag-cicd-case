@@ -32,6 +32,11 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONPATH=/app/src:/app/shared \
     RAG_GIT_SHA=${GIT_SHA}
 
+# Base images lag behind Debian security updates, so the OS packages are patched at build time.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 

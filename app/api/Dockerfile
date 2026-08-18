@@ -34,6 +34,14 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     RAG_RELEASE_VERSION=${RELEASE_VERSION} \
     RAG_GIT_SHA=${GIT_SHA}
 
+# Base images lag behind Debian security updates, so the OS packages are patched at build time.
+# It costs build reproducibility - the same Dockerfile yields different package versions over time
+# - which is the right trade when the alternative is shipping a known CVE. The release is still
+# reproducible by digest.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app
 
