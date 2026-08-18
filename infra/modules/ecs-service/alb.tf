@@ -64,32 +64,78 @@ resource "aws_lb_listener" "production" {
   port              = 80
   protocol          = "HTTP"
 
+  # The rule below carries every request. This only answers what matches nothing, which on a
+  # single-service listener means a misrouted request rather than a user.
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "no route"
+      status_code  = "404"
+    }
+  }
+}
+
+# ECS rewrites this rule's forward action to move traffic between blue and green, so Terraform
+# must stop asserting it or the next apply would undo a completed shift.
+resource "aws_lb_listener_rule" "production" {
+  listener_arn = aws_lb_listener.production.arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.blue.arn
   }
 
-  # CodeDeploy rewrites this to point at the green group during a deployment, so Terraform must
-  # stop asserting which group is live or the next apply would undo a completed release.
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+
   lifecycle {
-    ignore_changes = [default_action]
+    ignore_changes = [action]
   }
 }
 
-# The test listener is how a new task set is validated before any production traffic reaches it.
+# The test listener is how a new task set is reachable before any production traffic reaches it.
 resource "aws_lb_listener" "test" {
-  count = var.deployment_controller == "CODE_DEPLOY" ? 1 : 0
+  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
 
   load_balancer_arn = aws_lb.this.arn
   port              = 8080
   protocol          = "HTTP"
 
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "no route"
+      status_code  = "404"
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "test" {
+  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+
+  listener_arn = aws_lb_listener.test[0].arn
+  priority     = 1
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.green.arn
   }
 
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+
   lifecycle {
-    ignore_changes = [default_action]
+    ignore_changes = [action]
   }
 }

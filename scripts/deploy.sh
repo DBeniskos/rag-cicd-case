@@ -55,29 +55,24 @@ terraform -chdir="$ENV_DIR" apply -input=false -auto-approve \
   -var "release_version=$VERSION" \
   -var "git_sha=$git_sha"
 
-controller="$(terraform -chdir="$ENV_DIR" output -raw deployment_controller)"
+strategy="$(terraform -chdir="$ENV_DIR" output -raw deployment_strategy)"
 api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url)"
+cluster="$(terraform -chdir="$ENV_DIR" output -raw cluster_name)"
+service="$(terraform -chdir="$ENV_DIR" output -raw service_name)"
 
-if [ "$controller" = "ECS" ]; then
-  # Terraform has already registered the new task definition; the circuit breaker handles a task
-  # set that never becomes healthy by restoring the previous one, with no pipeline step involved.
-  cluster="$(terraform -chdir="$ENV_DIR" output -raw cluster_name)"
-  service="$(terraform -chdir="$ENV_DIR" output -raw service_name)"
-  family="$(terraform -chdir="$ENV_DIR" output -raw task_definition_family)"
-
-  printf 'deploy: rolling update with circuit breaker\n'
-  aws ecs update-service \
-    --cluster "$cluster" \
-    --service "$service" \
-    --task-definition "$family" \
-    --no-cli-pager >/dev/null
-
-  aws ecs wait services-stable --cluster "$cluster" --services "$service" \
-    || die "service did not stabilise — the circuit breaker should have rolled it back; check the events"
+# Both strategies are driven by ECS itself, so the apply above already started the release. The
+# difference is what ECS does with it: a rolling replacement guarded by the circuit breaker, or a
+# canary shift onto a second task set that alarms can reverse.
+if [ "$strategy" = "BLUE_GREEN" ]; then
+  printf 'deploy: blue/green — canary, bake, then full shift; alarms can reverse it\n'
 else
-  printf 'deploy: blue/green via CodeDeploy — canary, then alarm-gated shift\n'
-  bash "$REPO_ROOT/scripts/codedeploy_release.sh" "$ENV_DIR" "$api_image"
+  printf 'deploy: rolling update with circuit breaker\n'
 fi
+
+# services-stable is the honest wait for both: it returns once the deployment reaches a steady
+# state, which for a canary is after the shift completes or after a rollback has undone it.
+aws ecs wait services-stable --cluster "$cluster" --services "$service" \
+  || die "service did not stabilise — check whether the circuit breaker or a canary alarm rolled it back"
 
 bash "$REPO_ROOT/scripts/smoke.sh" "$api_url" "$VERSION"
 

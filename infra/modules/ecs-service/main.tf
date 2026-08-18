@@ -83,17 +83,63 @@ resource "aws_ecs_service" "api" {
     target_group_arn = aws_lb_target_group.blue.arn
     container_name   = "api"
     container_port   = var.container_port
+
+    # What makes the shift possible: ECS needs the second target group and the rule it may
+    # rewrite. Supplying them is the whole difference between a rolling update and a canary.
+    dynamic "advanced_configuration" {
+      for_each = var.deployment_strategy == "BLUE_GREEN" ? [1] : []
+
+      content {
+        alternate_target_group_arn = aws_lb_target_group.green.arn
+        production_listener_rule   = aws_lb_listener_rule.production.arn
+        test_listener_rule         = aws_lb_listener_rule.test[0].arn
+        role_arn                   = aws_iam_role.blue_green[0].arn
+      }
+    }
   }
 
+  # ECS drives both strategies natively. CodeDeploy is deliberately not used: it is a second
+  # control plane to reason about, and this account cannot subscribe to it at all.
   deployment_controller {
-    type = var.deployment_controller
+    type = "ECS"
   }
 
-  # The circuit breaker is the non-prod rollback story: a task set that never reaches a healthy
-  # state is abandoned and the previous definition is restored automatically, with no human and no
-  # pipeline step involved. Under CODE_DEPLOY this is ignored, because CodeDeploy owns rollback.
+  deployment_configuration {
+    strategy             = var.deployment_strategy
+    bake_time_in_minutes = var.deployment_strategy == "BLUE_GREEN" ? tostring(var.bake_time_minutes) : null
+
+    # 10% of real traffic, held long enough for the alarms below to gather evidence before the
+    # blast radius widens.
+    dynamic "canary_configuration" {
+      for_each = var.deployment_strategy == "BLUE_GREEN" ? [1] : []
+
+      content {
+        canary_percent              = var.canary_percent
+        canary_bake_time_in_minutes = tostring(var.canary_bake_time_minutes)
+      }
+    }
+  }
+
+  # The one that matters: an alarm tripping mid-canary reverses the shift without a human.
+  dynamic "alarms" {
+    for_each = var.deployment_strategy == "BLUE_GREEN" ? [1] : []
+
+    content {
+      alarm_names = [
+        aws_cloudwatch_metric_alarm.target_5xx[0].alarm_name,
+        aws_cloudwatch_metric_alarm.latency_p95[0].alarm_name,
+        aws_cloudwatch_metric_alarm.latency_p99[0].alarm_name,
+      ]
+      enable   = true
+      rollback = true
+    }
+  }
+
+  # The rolling rollback story: a task set that never reaches a healthy state is abandoned and the
+  # previous definition restored, with no human and no pipeline step involved. A canary needs the
+  # alarms above instead, because its failure mode is a task that starts healthy and serves badly.
   dynamic "deployment_circuit_breaker" {
-    for_each = var.deployment_controller == "ECS" ? [1] : []
+    for_each = var.deployment_strategy == "ROLLING" ? [1] : []
 
     content {
       enable   = true
@@ -104,9 +150,10 @@ resource "aws_ecs_service" "api" {
   health_check_grace_period_seconds = 60
   propagate_tags                    = "SERVICE"
 
-  # CodeDeploy owns the task definition and the live target group during a blue/green release.
-  # Terraform must not fight it, or the next apply would revert a completed deployment.
+  # Terraform owns the task definition, which is what makes a release a plan rather than an
+  # out-of-band API call. ECS shifts traffic by rewriting the listener rule, not this block, so
+  # only the rule needs to be left alone.
   lifecycle {
-    ignore_changes = [task_definition, load_balancer, desired_count]
+    ignore_changes = [desired_count]
   }
 }

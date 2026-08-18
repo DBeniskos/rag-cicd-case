@@ -74,7 +74,14 @@ module "api" {
   release_version = var.release_version
   git_sha         = var.git_sha
 
-  deployment_controller = var.deployment_controller
+  deployment_strategy      = var.deployment_strategy
+  canary_percent           = var.canary_percent
+  canary_bake_time_minutes = var.canary_bake_time_minutes
+  bake_time_minutes        = var.bake_time_minutes
+
+  error_count_threshold         = var.error_count_threshold
+  latency_p95_threshold_seconds = var.latency_p95_threshold_seconds
+  latency_p99_threshold_seconds = var.latency_p99_threshold_seconds
 
   index_bucket_arn            = module.index_store.bucket_arn
   index_bucket_name           = module.index_store.bucket_name
@@ -112,27 +119,4 @@ module "ingest" {
   doc_limit          = var.doc_limit
   git_sha            = var.git_sha
   log_retention_days = var.log_retention_days
-}
-
-# Only blue/green environments get a CodeDeploy application. Dev relies on the ECS deployment
-# circuit breaker instead, which is a different rollback mechanism rather than a lesser one:
-# it reverses a task set that never becomes healthy, where CodeDeploy reverses one that is
-# healthy but performing worse.
-module "codedeploy" {
-  count  = var.deployment_controller == "CODE_DEPLOY" ? 1 : 0
-  source = "../codedeploy"
-
-  name_prefix  = local.name_prefix
-  cluster_name = module.api.cluster_name
-  service_name = module.api.service_name
-
-  alb_arn_suffix          = module.api.alb_arn_suffix
-  production_listener_arn = module.api.production_listener_arn
-  test_listener_arn       = module.api.test_listener_arn
-  blue_target_group_name  = module.api.blue_target_group_name
-  green_target_group_name = module.api.green_target_group_name
-
-  deployment_config_name        = var.deployment_config_name
-  blue_termination_wait_minutes = var.blue_termination_wait_minutes
-  latency_p95_threshold_seconds = var.latency_p95_threshold_seconds
 }

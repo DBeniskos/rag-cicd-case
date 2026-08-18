@@ -76,8 +76,8 @@ module "environment" {
   git_sha              = var.git_sha
   active_index_version = var.active_index_version
 
-  desired_count         = 2
-  deployment_controller = "CODE_DEPLOY"
+  desired_count       = 2
+  deployment_strategy = "BLUE_GREEN"
 
   log_retention_days   = 30
   index_retention_days = 90
@@ -116,16 +116,12 @@ output "task_definition_family" {
   value = module.environment.task_definition_family
 }
 
-output "deployment_controller" {
-  value = module.environment.deployment_controller
+output "deployment_strategy" {
+  value = module.environment.deployment_strategy
 }
 
-output "codedeploy_application_name" {
-  value = module.environment.codedeploy_application_name
-}
-
-output "codedeploy_deployment_group_name" {
-  value = module.environment.codedeploy_deployment_group_name
+output "rollback_alarm_names" {
+  value = module.environment.rollback_alarm_names
 }
 
 output "ingest_task_family" {

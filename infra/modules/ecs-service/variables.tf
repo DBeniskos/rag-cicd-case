@@ -75,20 +75,54 @@ variable "git_sha" {
 
 # --- deployment strategy ----------------------------------------------------
 
-variable "deployment_controller" {
+variable "deployment_strategy" {
   description = <<-EOT
-    ECS  = rolling update with the deployment circuit breaker (non-prod).
-    CODE_DEPLOY = blue/green with canary traffic shifting (prod).
+    ROLLING    = in-place replacement guarded by the deployment circuit breaker (dev).
+    BLUE_GREEN = second task set, canary traffic shift, alarm-triggered rollback (prod).
     This is the single switch that separates the two strategies; everything else is identical,
-    which is what makes non-prod a genuine rehearsal for prod.
+    which is what makes dev a genuine rehearsal for prod.
   EOT
   type        = string
-  default     = "ECS"
+  default     = "ROLLING"
 
   validation {
-    condition     = contains(["ECS", "CODE_DEPLOY"], var.deployment_controller)
-    error_message = "deployment_controller must be ECS or CODE_DEPLOY."
+    condition     = contains(["ROLLING", "BLUE_GREEN"], var.deployment_strategy)
+    error_message = "deployment_strategy must be ROLLING or BLUE_GREEN."
   }
+}
+
+variable "canary_percent" {
+  description = "Share of traffic the green task set receives before the bake period."
+  type        = number
+  default     = 10
+}
+
+variable "canary_bake_time_minutes" {
+  description = "How long the canary holds at canary_percent while the alarms gather evidence."
+  type        = number
+  default     = 5
+}
+
+variable "bake_time_minutes" {
+  description = "How long the previous task set is kept after a full shift, and therefore how long an instant rollback stays possible."
+  type        = number
+  default     = 5
+}
+
+variable "error_count_threshold" {
+  description = "5xx responses in one minute that abort a canary."
+  type        = number
+  default     = 5
+}
+
+variable "latency_p95_threshold_seconds" {
+  type    = number
+  default = 12
+}
+
+variable "latency_p99_threshold_seconds" {
+  type    = number
+  default = 20
 }
 
 # --- model and index access -------------------------------------------------
