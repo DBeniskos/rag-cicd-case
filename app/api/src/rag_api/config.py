@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     log_level: str = "INFO"
 
-    # Stamped in at build time. /version surfaces these so a deploy can be proven, not assumed.
+    # Stamped in at build time. /healthz surfaces these so a deploy can be proven, not assumed.
     release_version: str = "0.0.0-dev"
     git_sha: str = "unknown"
 

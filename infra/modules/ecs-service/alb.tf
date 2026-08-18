@@ -1,7 +1,7 @@
 # Two target groups exist in every environment, not just prod.
 #
-# Blue/green needs somewhere to put the new task set, and CodeDeploy swaps which group the
-# production listener points at. Creating both everywhere keeps the module identical across
+# A staged rollout needs somewhere to put the new task set, and ECS swaps which group the
+# production listener rule points at. Creating both everywhere keeps the module identical across
 # environments — non-prod simply never exercises the second one.
 
 resource "aws_lb" "this" {
@@ -101,7 +101,7 @@ resource "aws_lb_listener_rule" "production" {
 
 # The test listener is how a new task set is reachable before any production traffic reaches it.
 resource "aws_lb_listener" "test" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   load_balancer_arn = aws_lb.this.arn
   port              = 8080
@@ -119,7 +119,7 @@ resource "aws_lb_listener" "test" {
 }
 
 resource "aws_lb_listener_rule" "test" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   listener_arn = aws_lb_listener.test[0].arn
   priority     = 1

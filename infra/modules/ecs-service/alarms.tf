@@ -5,7 +5,7 @@
 # thresholds tight. They exist only where a canary can consume them.
 
 resource "aws_cloudwatch_metric_alarm" "target_5xx" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   alarm_name          = "${var.name_prefix}-target-5xx"
   alarm_description   = "Application errors from the API. Trips a canary rollback."
@@ -25,7 +25,7 @@ resource "aws_cloudwatch_metric_alarm" "target_5xx" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "latency_p95" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   alarm_name          = "${var.name_prefix}-latency-p95"
   alarm_description   = "p95 response time. A slow model response is a user-visible outage."
@@ -46,7 +46,7 @@ resource "aws_cloudwatch_metric_alarm" "latency_p95" {
 # p95 alone absorbs the case where a handful of requests hang for the full Bedrock timeout. This
 # catches the long tail that percentile averaging conceals.
 resource "aws_cloudwatch_metric_alarm" "latency_p99" {
-  count = var.deployment_strategy == "BLUE_GREEN" ? 1 : 0
+  count = local.traffic_shifting ? 1 : 0
 
   alarm_name          = "${var.name_prefix}-latency-p99"
   alarm_description   = "p99 response time. Catches a stalled Bedrock call the p95 would absorb."

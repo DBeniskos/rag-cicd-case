@@ -31,17 +31,17 @@ until curl -fsS --max-time "$TIMEOUT" "$BASE_URL/healthz" >/dev/null 2>&1; do
 done
 printf 'smoke: healthz ok after %d attempt(s)\n' "$attempt"
 
-version_json="$(curl -fsS --max-time "$TIMEOUT" "$BASE_URL/version")" || die "/version unreachable"
-printf 'smoke: %s\n' "$version_json"
+health_json="$(curl -fsS --max-time "$TIMEOUT" "$BASE_URL/healthz")" || die "/healthz unreachable"
+printf 'smoke: %s\n' "$health_json"
 
 field() {
-  printf '%s' "$version_json" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
+  printf '%s' "$health_json" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
 }
 
 running_release="$(field release)"
 index_version="$(field index_version)"
 
-[ -n "$running_release" ] || die "/version did not report a release"
+[ -n "$running_release" ] || die "/healthz did not report a release"
 
 # The assertion that makes promotion verifiable: dev and prod must be running the same bytes,
 # and this is the only place that is actually confirmed.

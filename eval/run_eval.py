@@ -185,7 +185,7 @@ def load_thresholds(path: Path, env: str) -> dict[str, float]:
 
 
 def _headers() -> dict[str, str]:
-    """/ask is authenticated in deployed environments; /version is not."""
+    """/ask is authenticated in deployed environments; /healthz is not."""
     headers = {"Accept": "application/json"}
     api_key = os.environ.get("RAG_API_KEY", "")
     if api_key:
@@ -252,12 +252,12 @@ def evaluate_case(base_url: str, case: Case, timeout: int) -> CaseResult:
 def run(base_url: str, cases: list[Case], timeout: int, env: str) -> Report:
     report = Report(env=env, base_url=base_url)
     try:
-        version = _get_json(f"{base_url}/version", timeout)
+        health = _get_json(f"{base_url}/healthz", timeout)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise HarnessError(f"/version unreachable at {base_url}: {exc}") from exc
+        raise HarnessError(f"/healthz unreachable at {base_url}: {exc}") from exc
 
-    report.release = version.get("release", "unknown")
-    report.index_version = version.get("index_version", "unknown")
+    report.release = health.get("release", "unknown")
+    report.index_version = health.get("index_version", "unknown")
     if report.index_version in ("", "none", "unknown"):
         raise HarnessError(
             f"no index is promoted in {env} (index_version={report.index_version!r}); "

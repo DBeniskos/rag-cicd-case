@@ -43,7 +43,7 @@ output "test_listener_arn" {
 
 output "rollback_alarm_names" {
   description = "The alarms that reverse a canary. Empty where the strategy is rolling."
-  value       = var.deployment_strategy == "BLUE_GREEN" ? [for a in concat(aws_cloudwatch_metric_alarm.target_5xx, aws_cloudwatch_metric_alarm.latency_p95, aws_cloudwatch_metric_alarm.latency_p99) : a.alarm_name] : []
+  value       = local.traffic_shifting ? [for a in concat(aws_cloudwatch_metric_alarm.target_5xx, aws_cloudwatch_metric_alarm.latency_p95, aws_cloudwatch_metric_alarm.latency_p99) : a.alarm_name] : []
 }
 
 output "log_group_name" {

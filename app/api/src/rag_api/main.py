@@ -27,7 +27,6 @@ from rag_api.schemas import (
     AskResponse,
     ErrorResponse,
     HealthResponse,
-    VersionResponse,
 )
 from rag_shared.logging_config import configure_logging
 
@@ -65,29 +64,18 @@ router = APIRouter()
 
 @router.get("/healthz", response_model=HealthResponse, tags=["ops"])
 async def healthz(request: Request) -> HealthResponse:
-    """Liveness, plus which environment and index answered.
+    """Liveness, and which release and index actually answered.
 
     Touches neither the index nor Bedrock: a health check that called the model would let a
     Bedrock outage drain every target and turn a degraded service into no service. The identity
-    fields are read from memory, so they cost nothing and make it obvious during a blue/green
-    shift which task set replied.
+    fields are read from memory, so they cost nothing, and they report the index that loaded
+    rather than the one configured. During a traffic shift this is how an operator tells which
+    task set replied, and the deploy asserts the release against it.
     """
     settings: Settings = request.app.state.settings
     retriever = request.app.state.retriever
     return HealthResponse(
         status="ok",
-        env=settings.env,
-        release=settings.release_version,
-        index_version=retriever.index_version if retriever is not None else NO_INDEX,
-    )
-
-
-@router.get("/version", response_model=VersionResponse, tags=["ops"])
-async def version(request: Request) -> VersionResponse:
-    """Reports the index actually loaded, not the one configured. Asserted by the deploy."""
-    settings: Settings = request.app.state.settings
-    retriever = request.app.state.retriever
-    return VersionResponse(
         env=settings.env,
         release=settings.release_version,
         git_sha=settings.git_sha,
@@ -100,8 +88,8 @@ async def version(request: Request) -> VersionResponse:
 def _require_api_key(settings: Settings, request: Request) -> None:
     """Guards /ask only.
 
-    /healthz and /version stay open: the ALB health check cannot present a key, and the smoke test
-    has to be able to prove which release is serving before it has credentials for anything.
+    /healthz stays open: the ALB health check cannot present a key, and the smoke test has to be
+    able to prove which release is serving before it has credentials for anything.
     """
     if not settings.api_key:
         return

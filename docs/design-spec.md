@@ -137,7 +137,7 @@ event, whereas this pipeline requires an explicit dispatch and a reviewer on pro
 | --- | --- | --- |
 | `rag-role-cipipeline` | pull requests | read ECR, `terraform plan` (read-only AWS) |
 | `rag-role-releasepipeline` | `main` | push to ECR — and nothing else |
-| `rag-role-deploymentpipeline` | GitHub `environment` claim | `terraform apply`, ECS, CodeDeploy, SSM |
+| `rag-role-deploymentpipeline` | GitHub `environment` claim | `terraform apply`, ECS, ELB, SSM |
 
 No long-lived AWS keys exist anywhere. The prod deployment role is trusted only from a job running
 in the `prod` GitHub environment, which has a required reviewer — so **the approval gate sits in

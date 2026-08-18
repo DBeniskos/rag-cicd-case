@@ -71,8 +71,8 @@ job needs its own IAM role, since it is the only principal permitted to write an
 
 | | dev | prod |
 | --- | --- | --- |
-| Controller | `ECS` rolling | `CODE_DEPLOY` blue/green |
-| Traffic shift | in place | 10% canary → 5 min bake → 100% |
+| Strategy | `ROLLING` | `CANARY` — both on the `ECS` controller |
+| Traffic shift | in place | 10% canary → 5 min bake → 100%, then 5 min bake |
 | Rollback trigger | circuit breaker | alarm on the *new* target group |
 | Approval | none | GitHub environment reviewer |
 

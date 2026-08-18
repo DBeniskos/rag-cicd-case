@@ -1,3 +1,11 @@
+# BLUE_GREEN and CANARY both run a second task set behind the alternate target group and shift
+# traffic by rewriting a listener rule; they differ only in whether the shift is all-at-once or
+# staged. Everything except the canary block itself is therefore shared, and only ROLLING replaces
+# tasks in place.
+locals {
+  traffic_shifting = var.deployment_strategy != "ROLLING"
+}
+
 resource "aws_ecs_cluster" "this" {
   name = "${var.name_prefix}-cluster"
 
@@ -88,7 +96,7 @@ resource "aws_ecs_service" "api" {
     # What makes the shift possible: ECS needs the second target group and the rule it may
     # rewrite. Supplying them is the whole difference between a rolling update and a canary.
     dynamic "advanced_configuration" {
-      for_each = var.deployment_strategy == "BLUE_GREEN" ? [1] : []
+      for_each = local.traffic_shifting ? [1] : []
 
       content {
         alternate_target_group_arn = aws_lb_target_group.green.arn
@@ -107,12 +115,13 @@ resource "aws_ecs_service" "api" {
 
   deployment_configuration {
     strategy             = var.deployment_strategy
-    bake_time_in_minutes = var.deployment_strategy == "BLUE_GREEN" ? tostring(var.bake_time_minutes) : null
+    bake_time_in_minutes = local.traffic_shifting ? tostring(var.bake_time_minutes) : null
 
-    # 10% of real traffic, held long enough for the alarms below to gather evidence before the
-    # blast radius widens.
+    # Only honoured when the strategy is literally CANARY. Under BLUE_GREEN the API accepts this
+    # block and ignores it, shifting 100% at once — a silent difference between what the config
+    # says and what the deployment does.
     dynamic "canary_configuration" {
-      for_each = var.deployment_strategy == "BLUE_GREEN" ? [1] : []
+      for_each = var.deployment_strategy == "CANARY" ? [1] : []
 
       content {
         canary_percent              = var.canary_percent
@@ -123,7 +132,7 @@ resource "aws_ecs_service" "api" {
 
   # The one that matters: an alarm tripping mid-canary reverses the shift without a human.
   dynamic "alarms" {
-    for_each = var.deployment_strategy == "BLUE_GREEN" ? [1] : []
+    for_each = local.traffic_shifting ? [1] : []
 
     content {
       alarm_names = [

@@ -86,7 +86,7 @@ variable "desired_count" {
 }
 
 variable "deployment_strategy" {
-  description = "ROLLING (circuit breaker) or BLUE_GREEN (canary shift, alarm rollback)."
+  description = "ROLLING (circuit breaker), BLUE_GREEN (shift all at once) or CANARY (staged shift)."
   type        = string
   default     = "ROLLING"
 }

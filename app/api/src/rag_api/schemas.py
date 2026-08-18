@@ -1,4 +1,4 @@
-"""Request and response contracts. The smoke test and eval harness both read /version."""
+"""Request and response contracts. The smoke test and eval harness both read /healthz."""
 
 from __future__ import annotations
 
@@ -43,9 +43,15 @@ class AskResponse(BaseModel):
     usage: TokenUsage
 
 
-class VersionResponse(BaseModel):
-    """What is actually running. The deploy pipeline asserts against this."""
+class HealthResponse(BaseModel):
+    """Liveness plus what is actually running.
 
+    One unauthenticated GET rather than a separate /version: the ALB health check, the smoke test
+    and the eval harness all need the same facts, and two routes carrying release identity is two
+    routes that can disagree.
+    """
+
+    status: Literal["ok"]
     env: str
     release: str
     git_sha: str
@@ -57,34 +63,13 @@ class VersionResponse(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
+                    "status": "ok",
                     "env": "prod",
                     "release": "v0.9.0",
                     "git_sha": "7b23b5f",
                     "index_version": "v1-f2e9a6b",
                     "embed_model_id": "amazon.titan-embed-text-v2:0",
                     "text_model_id": "us.amazon.nova-lite-v1:0",
-                }
-            ]
-        }
-    }
-
-
-class HealthResponse(BaseModel):
-    """Liveness plus enough identity to tell which environment and task set answered."""
-
-    status: Literal["ok"]
-    env: str
-    release: str
-    index_version: str
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "status": "ok",
-                    "env": "prod",
-                    "release": "v0.9.0",
-                    "index_version": "v1-f2e9a6b",
                 }
             ]
         }

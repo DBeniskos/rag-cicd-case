@@ -210,7 +210,7 @@ jobs:
             echo "### Index ${{ inputs.action }} → \`${{ inputs.environment }}\`"
             echo ""
             echo '```json'
-            curl -fsS "$(terraform -chdir="$ENV_DIR" output -raw api_url)/version" || true
+            curl -fsS "$(terraform -chdir="$ENV_DIR" output -raw api_url)/healthz" || true
             echo ""
             echo '```'
             if [ "${{ job.status }}" != "success" ]; then
