@@ -135,11 +135,11 @@ resource "aws_ecs_service" "api" {
     for_each = local.traffic_shifting ? [1] : []
 
     content {
-      alarm_names = [
-        aws_cloudwatch_metric_alarm.target_5xx[0].alarm_name,
-        aws_cloudwatch_metric_alarm.latency_p95[0].alarm_name,
-        aws_cloudwatch_metric_alarm.latency_p99[0].alarm_name,
-      ]
+      alarm_names = concat(
+        [for a in aws_cloudwatch_metric_alarm.target_5xx : a.alarm_name],
+        [for a in aws_cloudwatch_metric_alarm.latency_p95 : a.alarm_name],
+        [for a in aws_cloudwatch_metric_alarm.latency_p99 : a.alarm_name],
+      )
       enable   = true
       rollback = true
     }
