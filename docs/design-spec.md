@@ -179,12 +179,15 @@ Two details that matter more than they look:
 | Control | Implementation |
 | --- | --- |
 | No static credentials | GitHub OIDC → three scoped roles, pinned to numeric owner/repo IDs |
+| Caller authentication | `/ask` requires `x-api-key`, compared in constant time; the key lives in Secrets Manager |
+| Secret delivery | ECS agent resolves it via the **execution** role, so it never enters the task definition and the task role cannot read it |
+| CI cannot read secrets | the CI role carries an explicit `Deny` on `secretsmanager:GetSecretValue` that outranks its managed read-only policy |
 | Least privilege on the model | `bedrock:InvokeModel` on exactly the two model ARNs in use, plus the inference-profile ARN |
 | Least privilege on the index | API role is read-only on the index prefix; only the ingest role can write |
 | Container hardening | multi-stage build, non-root UID 10001, no shell in the final layer |
 | Image scanning | Trivy on every release; ECR scan-on-push |
 | Static analysis | CodeQL and Ruff's bandit rules in the PR gate |
-| Encryption | S3 SSE, SSM SecureString, TLS in transit |
+| Encryption | S3 SSE, Secrets Manager, SSM SecureString, TLS in transit |
 | Branch protection | linear history, no force-push, PR required, `enforce_admins: true` |
 
 **The AI-specific control worth calling out** is scoping Bedrock permissions to named model ARNs.
@@ -219,7 +222,7 @@ Being explicit about scope is part of the design.
 | Not built | Why | What it would take |
 | --- | --- | --- |
 | Separate AWS accounts | scope: this is a pipeline exercise, not a landing zone. Compensated with scoped roles and environment-gated credentials — [decisions §5](decisions.md) | Organizations, cross-account roles, a second state bucket |
-| Authentication on `/ask` | no user model in the brief; the ALB is public and the service is stateless | Cognito or an API Gateway authorizer in front of the ALB |
+| Per-caller identity on `/ask` | a single shared key authenticates *that a caller is allowed*, not *which* caller | Cognito or an API Gateway authorizer, plus per-client keys and rate limits |
 | LLM-as-judge scoring | would make the release gate irreproducible — [decisions §6](decisions.md) | a nightly offline job producing a trend line, not a gate |
 | Autoscaling | the load profile is a demo | target-tracking on ALB request count per target |
 | WAF, Shield, private subnets with NAT | cost, in a personal account, for no demonstrative value | a NAT gateway is ~$32/month by itself |

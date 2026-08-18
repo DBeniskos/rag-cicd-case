@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Cross-region inference profile id, not a bare model id. See docs/decisions.md.
     text_model_id: str = "us.amazon.nova-lite-v1:0"
 
+    # Injected by the ECS agent from Secrets Manager. Empty disables auth, which is what local
+    # runs and unit tests use — deployed environments always have it set.
+    api_key: str = ""
+
     top_k: int = Field(default=4, ge=1, le=20)
     # Caps the cost of a runaway prompt, not just its latency.
     max_output_tokens: int = Field(default=512, ge=1, le=4096)

@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from secrets import compare_digest
 from typing import TYPE_CHECKING
 
 import structlog
@@ -37,9 +38,15 @@ log = structlog.get_logger()
 # none of the signal.
 _HEALTH_PATH = "/healthz"
 
+
 # Each failure mode maps to the status code that tells a caller what to do about it. The `code` is
 # machine-readable so smoke tests can distinguish causes rather than guess from a status alone.
+class UnauthorizedError(RuntimeError):
+    """Missing or wrong API key."""
+
+
 _ERRORS: dict[type[Exception], tuple[int, str]] = {
+    UnauthorizedError: (401, "unauthorized"),
     IndexUnavailableError: (503, "index_unavailable"),
     EmbeddingModelMismatchError: (503, "embedding_model_mismatch"),
     ModelThrottledError: (429, "model_throttled"),
@@ -74,11 +81,26 @@ async def version(request: Request) -> VersionResponse:
     )
 
 
+def _require_api_key(settings: Settings, request: Request) -> None:
+    """Guards /ask only.
+
+    /healthz and /version stay open: the ALB health check cannot present a key, and the smoke test
+    has to be able to prove which release is serving before it has credentials for anything.
+    """
+    if not settings.api_key:
+        return
+    presented = request.headers.get("x-api-key", "")
+    # Constant-time, so a wrong key cannot be recovered by timing the comparison.
+    if not compare_digest(presented, settings.api_key):
+        raise UnauthorizedError("missing or invalid x-api-key header")
+
+
 @router.post(
     "/ask",
     response_model=AskResponse,
     tags=["inference"],
     responses={
+        401: {"model": ErrorResponse},
         429: {"model": ErrorResponse},
         502: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
@@ -86,6 +108,8 @@ async def version(request: Request) -> VersionResponse:
 )
 async def ask(payload: AskRequest, request: Request) -> AskResponse:
     settings: Settings = request.app.state.settings
+    _require_api_key(settings, request)
+
     retriever = request.app.state.retriever
     generator = request.app.state.generator
 

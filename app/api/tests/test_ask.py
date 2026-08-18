@@ -17,6 +17,50 @@ def test_returns_503_with_a_machine_readable_code_when_no_index_is_promoted(make
     assert response.json()["code"] == "index_unavailable"
 
 
+class TestApiKey:
+    """Auth is enforced on /ask only, and only when a key is configured."""
+
+    def test_rejects_a_missing_key(self, make_client):
+        with make_client(
+            retriever=FakeRetriever(), generator=FakeGenerator(), api_key="s3cret"
+        ) as client:
+            response = client.post("/ask", json={"question": "anything"})
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "unauthorized"
+
+    def test_rejects_a_wrong_key(self, make_client):
+        with make_client(
+            retriever=FakeRetriever(), generator=FakeGenerator(), api_key="s3cret"
+        ) as client:
+            response = client.post(
+                "/ask", json={"question": "anything"}, headers={"x-api-key": "wrong"}
+            )
+
+        assert response.status_code == 401
+
+    def test_accepts_the_right_key(self, make_client):
+        with make_client(
+            retriever=FakeRetriever(), generator=FakeGenerator(), api_key="s3cret"
+        ) as client:
+            response = client.post(
+                "/ask", json={"question": "anything"}, headers={"x-api-key": "s3cret"}
+            )
+
+        assert response.status_code == 200
+
+    def test_health_and_version_stay_open(self, make_client):
+        # The ALB health check cannot present a key, and the smoke test has to identify the
+        # running release before it holds credentials for anything.
+        with make_client(api_key="s3cret") as client:
+            assert client.get("/healthz").status_code == 200
+            assert client.get("/version").status_code == 200
+
+    def test_no_key_configured_means_no_auth(self, make_client):
+        with make_client(retriever=FakeRetriever(), generator=FakeGenerator()) as client:
+            assert client.post("/ask", json={"question": "anything"}).status_code == 200
+
+
 def test_returns_answer_passages_and_token_usage(make_client):
     with make_client(retriever=FakeRetriever(), generator=FakeGenerator()) as client:
         response = client.post("/ask", json={"question": "Who hunts replicants?"})

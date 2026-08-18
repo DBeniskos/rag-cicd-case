@@ -9,6 +9,10 @@ data "aws_caller_identity" "current" {}
 locals {
   name_prefix = "${var.project}-${var.environment}"
   account_id  = data.aws_caller_identity.current.account_id
+
+  # Built from the known role name rather than read from module.api, which would make the secret
+  # depend on the service that consumes it and close a dependency cycle.
+  execution_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-${var.environment}-task-execution"
 }
 
 module "network" {
@@ -29,6 +33,24 @@ module "index_store" {
   index_retention_days = var.index_retention_days
   # Prod keeps its corpus and indexes even if someone runs destroy by mistake.
   force_destroy = var.environment != "prod"
+}
+
+# The ALB is public, so /ask is authenticated with a key the caller presents. Secrets Manager holds
+# the value; nothing in this repo, in CI or in the task definition ever does.
+module "api_key_secret" {
+  source = "../secret"
+
+  name_prefix        = local.name_prefix
+  secret_envvar_name = "RAG_API_KEY"
+  project            = var.project
+  environment        = var.environment
+
+  # Prod keeps a recovery window so a mistaken destroy is reversible.
+  recovery_window_days = var.environment == "prod" ? 7 : 0
+
+  # Named explicitly, so the resource policy is a second independent grant rather than relying on
+  # the execution role's own policy being the only control.
+  allowed_roles_arn = [local.execution_role_arn]
 }
 
 module "api" {
@@ -63,6 +85,9 @@ module "api" {
   embed_model_id    = var.embed_model_id
   text_model_id     = var.text_model_id
   max_output_tokens = var.max_output_tokens
+
+  container_secrets = [module.api_key_secret.container_secret]
+  secret_arns       = [module.api_key_secret.arn]
 
   log_retention_days = var.log_retention_days
 }

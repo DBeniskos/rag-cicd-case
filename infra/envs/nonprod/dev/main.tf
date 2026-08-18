@@ -6,6 +6,12 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    # Seeds the API key secret. Providers are pinned here rather than in the modules, so every
+    # environment resolves the same versions.
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   backend "s3" {
@@ -80,6 +86,15 @@ module "environment" {
 
 output "api_url" {
   value = module.environment.api_url
+}
+
+# The name, never the value: callers that are allowed the key read it from Secrets Manager.
+output "api_key_secret_name" {
+  value = module.environment.api_key_secret_name
+}
+
+output "api_key_secret_arn" {
+  value = module.environment.api_key_secret_arn
 }
 
 output "index_bucket" {

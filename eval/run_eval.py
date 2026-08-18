@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import tomllib
@@ -183,8 +184,17 @@ def load_thresholds(path: Path, env: str) -> dict[str, float]:
     return {key: float(value) for key, value in merged.items()}
 
 
+def _headers() -> dict[str, str]:
+    """/ask is authenticated in deployed environments; /version is not."""
+    headers = {"Accept": "application/json"}
+    api_key = os.environ.get("RAG_API_KEY", "")
+    if api_key:
+        headers["x-api-key"] = api_key
+    return headers
+
+
 def _get_json(url: str, timeout: int) -> dict[str, Any]:
-    request = urllib.request.Request(url, headers={"Accept": "application/json"})  # noqa: S310
+    request = urllib.request.Request(url, headers=_headers())  # noqa: S310
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
         return json.loads(response.read().decode("utf-8"))
 
@@ -193,7 +203,7 @@ def _post_ask(base_url: str, question: str, timeout: int) -> dict[str, Any]:
     request = urllib.request.Request(  # noqa: S310
         f"{base_url}/ask",
         data=json.dumps({"question": question}).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={**_headers(), "Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310

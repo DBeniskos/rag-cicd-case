@@ -3,6 +3,16 @@ output "api_url" {
   value       = "http://${module.api.alb_dns_name}"
 }
 
+# The name, never the value. Callers that are allowed the key fetch it from Secrets Manager, so it
+# is not carried in Terraform output, in CI logs or in a workflow artifact.
+output "api_key_secret_name" {
+  value = module.api_key_secret.name
+}
+
+output "api_key_secret_arn" {
+  value = module.api_key_secret.arn
+}
+
 output "cluster_name" {
   value = module.api.cluster_name
 }

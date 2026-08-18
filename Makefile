@@ -19,7 +19,7 @@ export AWS_REGION
 export ENV
 export VERSION
 
-.PHONY: help check-tools bootstrap platform init plan deploy api-url smoke eval \
+.PHONY: help check-tools bootstrap platform init plan deploy api-url api-key smoke eval \
         seed-corpus index-status promote-index rollback-index destroy fmt lint test ci
 
 help: ## Show available targets
@@ -54,9 +54,17 @@ smoke: ## Assert the environment serves the expected release (ENV=... [VERSION=.
 	@bash $(SCRIPTS)/smoke.sh "$$(terraform -chdir=$(ENV_DIR) output -raw api_url)" $(VERSION)
 
 eval: ## Run the golden-set quality gate against an environment
-	@$(PY) eval/run_eval.py \
+	@RAG_API_KEY="$$(aws secretsmanager get-secret-value \
+	  --secret-id "$$(terraform -chdir=$(ENV_DIR) output -raw api_key_secret_name)" \
+	  --query SecretString --output text)" \
+	 $(PY) eval/run_eval.py \
 	  --base-url "$$(terraform -chdir=$(ENV_DIR) output -raw api_url)" \
 	  --env "$(ENV)"
+
+api-key: ## Print the environment's API key (for manual curl / Postman)
+	@aws secretsmanager get-secret-value \
+	  --secret-id "$$(terraform -chdir=$(ENV_DIR) output -raw api_key_secret_name)" \
+	  --query SecretString --output text
 
 # ---- index lifecycle ---------------------------------------------------------
 

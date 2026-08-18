@@ -68,9 +68,11 @@ def make_client(settings: Settings):
 
     @contextmanager
     def _make(
-        retriever: object | None = None, generator: object | None = None
+        retriever: object | None = None,
+        generator: object | None = None,
+        api_key: str = "",
     ) -> Iterator[TestClient]:
-        app = create_app(settings)
+        app = create_app(settings.model_copy(update={"api_key": api_key}))
         with TestClient(app) as client:
             if retriever is not None:
                 app.state.retriever = retriever
