@@ -79,10 +79,10 @@ variable "desired_count" {
   default = 1
 }
 
-variable "deployment_controller" {
-  description = "ECS (rolling + circuit breaker) or CODE_DEPLOY (blue/green canary)."
+variable "deployment_strategy" {
+  description = "ROLLING (circuit breaker) or BLUE_GREEN (canary shift, alarm rollback)."
   type        = string
-  default     = "ECS"
+  default     = "ROLLING"
 }
 
 variable "release_version" {
@@ -133,14 +133,26 @@ variable "index_retention_days" {
   default = 30
 }
 
-variable "deployment_config_name" {
-  description = "CodeDeploy traffic-shifting shape. Ignored unless blue/green."
-  type        = string
-  default     = "CodeDeployDefault.ECSCanary10Percent5Minutes"
+variable "canary_percent" {
+  description = "Share of traffic the green task set receives before the bake period."
+  type        = number
+  default     = 10
 }
 
-variable "blue_termination_wait_minutes" {
+variable "canary_bake_time_minutes" {
+  description = "How long the canary holds while the alarms gather evidence."
+  type        = number
+  default     = 5
+}
+
+variable "bake_time_minutes" {
   description = "How long an instant rollback stays possible after a successful shift."
+  type        = number
+  default     = 5
+}
+
+variable "error_count_threshold" {
+  description = "5xx responses in one minute that abort a canary."
   type        = number
   default     = 5
 }
@@ -148,5 +160,11 @@ variable "blue_termination_wait_minutes" {
 variable "latency_p95_threshold_seconds" {
   description = "Canary latency budget. Bedrock generation dominates it."
   type        = number
-  default     = 4
+  default     = 12
+}
+
+variable "latency_p99_threshold_seconds" {
+  description = "Long-tail budget. Catches a stalled Bedrock call the p95 absorbs."
+  type        = number
+  default     = 20
 }

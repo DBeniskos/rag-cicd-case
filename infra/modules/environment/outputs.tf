@@ -57,18 +57,14 @@ output "log_group_name" {
   value = module.api.log_group_name
 }
 
-output "deployment_controller" {
-  description = "Tells deploy.sh which release mechanism this environment uses."
-  value       = var.deployment_controller
+output "deployment_strategy" {
+  description = "Tells deploy.sh and the runbook which release mechanism this environment uses."
+  value       = var.deployment_strategy
 }
 
-output "codedeploy_application_name" {
-  description = "Null for environments that deploy with rolling updates."
-  value       = try(module.codedeploy[0].application_name, null)
-}
-
-output "codedeploy_deployment_group_name" {
-  value = try(module.codedeploy[0].deployment_group_name, null)
+output "rollback_alarm_names" {
+  description = "The alarms that reverse a canary. Empty where the strategy is rolling."
+  value       = module.api.rollback_alarm_names
 }
 
 output "ingest_task_family" {
