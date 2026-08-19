@@ -38,8 +38,11 @@ emit_summary() {
   [ -s "$TIMELINE" ] || return 0
   {
     printf '\n#### Traffic timeline\n\n'
-    printf '| elapsed | event | live (:80) | canary (:8080) |\n'
-    printf '| --- | --- | --- | --- |\n'
+    if [ -n "$TEST_URL" ]; then
+      printf '| elapsed | event | live (:80) | test listener (:8080) |\n| --- | --- | --- | --- |\n'
+    else
+      printf '| elapsed | event | live |\n| --- | --- | --- |\n'
+    fi
     cat "$TIMELINE"
     printf '\n'
   } >> "$GITHUB_STEP_SUMMARY"
@@ -125,36 +128,48 @@ EOF
   elapsed=$(( $(date +%s) - started ))
   now="$(weights)"
   live="$(release_at "$BASE_URL")"
-  test_release="$(release_at "$TEST_URL")"
 
-  # Only transitions are worth shouting about; the polls in between are noise.
+  # Only meaningful where a second task set exists; a rolling update has no test listener, and
+  # printing an always-empty column makes it look like it does.
+  canary_col=""
+  canary_cell=""
+  if [ -n "$TEST_URL" ]; then
+    canary_col="  test=$(release_at "$TEST_URL")"
+    canary_cell=" \`$(release_at "$TEST_URL")\` |"
+  fi
+
+  # Only transitions are worth reporting; the polls between them are noise. The first reading is
+  # the state we started from rather than a shift — calling it one makes a rolling update, which
+  # never moves traffic between target groups at all, look like it has canary machinery.
   if [ "$now" != "$last_weights" ]; then
-    printf 'wait: >>> [%4ds] TRAFFIC SHIFT  %s   live=%s  canary=%s\n' \
-      "$elapsed" "$now" "$live" "$test_release"
-    printf '| %ds | traffic shift → %s | `%s` | `%s` |\n' \
-      "$elapsed" "$now" "$live" "$test_release" >> "$TIMELINE"
+    if [ -z "$last_weights" ]; then
+      event="baseline"
+    else
+      event="TRAFFIC SHIFT"
+    fi
+    printf 'wait: >>> [%4ds] %-13s %s   live=%s%s\n' "$elapsed" "$event" "$now" "$live" "$canary_col"
+    printf '| %ds | %s → %s | `%s` |%s\n' "$elapsed" "$event" "$now" "$live" "$canary_cell" >> "$TIMELINE"
     last_weights="$now"
   fi
 
   case "$status" in
     SUCCESSFUL)
       printf 'wait: [%4ds] SUCCEEDED     %s   live=%s\n' "$elapsed" "$now" "$live"
-      printf '| %ds | **deployment succeeded** | `%s` | - |\n' "$elapsed" "$live" >> "$TIMELINE"
+      printf '| %ds | **deployment succeeded** | `%s` |%s\n' "$elapsed" "$live" "$canary_cell" >> "$TIMELINE"
       exit 0
       ;;
     ROLLBACK_SUCCESSFUL | ROLLBACK_IN_PROGRESS)
       printf 'wait: [%4ds] ROLLING BACK  %s   live=%s\n' "$elapsed" "$now" "$live"
-      printf '| %ds | **ROLLED BACK** (%s) | `%s` | - |\n' "$elapsed" "$status" "$live" >> "$TIMELINE"
+      printf '| %ds | **ROLLED BACK** (%s) | `%s` |%s\n' "$elapsed" "$status" "$live" "$canary_cell" >> "$TIMELINE"
       die "ECS is reversing this deployment ($status) — the previous version is what is serving"
       ;;
     ROLLBACK_FAILED | STOPPED | STOP_REQUESTED)
-      printf '| %ds | **%s** | `%s` | - |\n' "$elapsed" "$status" "$live" >> "$TIMELINE"
+      printf '| %ds | **%s** | `%s` |%s\n' "$elapsed" "$status" "$live" "$canary_cell" >> "$TIMELINE"
       die "deployment ended as $status"
       ;;
   esac
 
-  printf 'wait: [%4ds] %-12s  %s   live=%s  canary=%s\n' \
-    "$elapsed" "$status" "$now" "$live" "$test_release"
+  printf 'wait: [%4ds] %-12s  %s   live=%s%s\n' "$elapsed" "$status" "$now" "$live" "$canary_col"
 
   [ "$(date +%s)" -lt "$deadline" ] || die "deployment still $status after ${TIMEOUT}s"
 
