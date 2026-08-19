@@ -222,12 +222,14 @@ rollback, and it needs no topic. They also publish to a per-environment SNS topi
 (`rag-{env}-alerts`) on both `ALARM` and `OK`, so a rollback is something a human is told about
 rather than something they discover from a version string the next morning.
 
-The address is the `ALERT_EMAIL` repository variable, passed on every apply by `deploy.sh`. That
-is deliberate rather than incidental: Terraform reconciles to the configuration it is handed, so a
+The address is the `ALERT_EMAIL` repository **secret**, passed on every apply by `deploy.sh`. A
+secret rather than a variable because an address is personal data and Actions logs on a public repo
+are world-readable; the Terraform variable is marked `sensitive` for the same reason, so the
+subscription's endpoint is redacted from plan and apply output. Passing it on *every* apply is
+deliberate rather than incidental: Terraform reconciles to the configuration it is handed, so a
 subscription created by one apply and omitted from the next would be **deleted** by it. Alerting
 that silently switches itself off after one release is worse than none, because nobody notices.
-Unset means the topic exists and is published to but has no subscriber — the state this repo ships
-in, since the address belongs to whoever runs it.
+Unset means the topic exists and is published to but has no subscriber.
 
 What is deliberately not alarmed: running task count at zero, Bedrock throttle count and token
 spend. The first is covered by the deployment machinery, and the other two matter at a traffic

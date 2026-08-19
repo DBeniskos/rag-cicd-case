@@ -155,6 +155,9 @@ variable "alert_email" {
   description = "Address subscribed to the environment's alarm topic. Empty means the topic exists but has no subscriber, which is still better than alarms with nowhere to publish."
   type        = string
   default     = ""
+  # Somebody's address, and apply output is a public CI log. Terraform prints the subscription's
+  # endpoint attribute otherwise.
+  sensitive = true
 }
 
 variable "gate_timeout_seconds" {
