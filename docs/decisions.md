@@ -101,6 +101,24 @@ traffic, the Lambda runs `eval/run_eval.py` against it, and returns `SUCCEEDED` 
 answers badly reaches nobody. The bundle vendors the same harness, golden set and thresholds the
 pipeline uses, so the gate and CI can never disagree about what "good" means.
 
+**The gate has been drilled, not just deployed.** We shipped a release whose only change was a
+tightened system prompt — one that reads as a reasonable hardening of grounding and passes
+everything: 106 unit tests, ruff, black, CodeQL, all three Terraform plans. In prod the new task
+set came up healthy on the test listener and the gate rejected it nine seconds after it started
+measuring: `recall_at_k` 100%, `error_rate` 0%, p95 754ms, and `answer_match_rate` **7%** against a
+floor of 80%. Retrieval was perfect and the service returned HTTP 200 to every request; it had
+simply stopped answering. Production stayed on the previous release throughout, the pipeline's
+rollback step redeployed it, and that redeploy was itself gated — 18/18 — rather than assumed good.
+Dev, which evaluates after the deploy rather than before, served the bad release briefly and was
+restored by the same pipeline step. The whole cycle took under five minutes with no human in it.
+
+**Two rollback paths converge, and that is fine.** ECS begins its own rollback the moment the hook
+fails, while `deploy.yml`'s rollback step redeploys the previous release to repair Terraform state.
+Both target the same revision, so whichever lands first wins and the outcome is identical. The only
+consequence is cosmetic: if the pipeline gets there first, the failed deployment's record reads
+`STOPPED — Replaced by a new service deployment` rather than `ROLLBACK_SUCCESSFUL`, and the reason
+for the failure is on the *hook*, not the deployment. The runbook says where to look.
+
 **Why not a canary.** A canary trades blast radius for observation time, and is the right answer
 when correctness can *only* be judged from production traffic. That is not the case here, and the
 earlier canary made the mismatch obvious. Its alarms watched `HTTPCode_Target_5XX_Count` and

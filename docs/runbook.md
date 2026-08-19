@@ -117,6 +117,13 @@ log, which names the failing cases:
 aws logs tail /aws/lambda/rag-prod-deployment-gate --since 30m
 ```
 
+**A rejected deployment does not always read `ROLLBACK_SUCCESSFUL`.** ECS starts reversing as soon
+as the hook fails, and `deploy.yml`'s rollback step redeploys the previous release at about the
+same time. Both aim at the same revision, so whichever lands first wins — and if the pipeline wins,
+the failed deployment's record reads `STOPPED — Replaced by a new service deployment`. That is not
+a different outcome, and it is not a second failure. Judge by the hook status and the gate log, not
+by the deployment's final status.
+
 To stop a deployment immediately rather than wait:
 
 ```bash
