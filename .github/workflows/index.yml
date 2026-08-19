@@ -3,8 +3,9 @@ name: index
 # The index has its own release cycle, separate from the service.
 #
 # Build produces a new immutable version; promote flips a pointer. Keeping them separate is what
-# makes a bad index recoverable in seconds: the previous version is still sitting in S3, so
-# rollback is a write to one SSM parameter rather than a rebuild and a redeploy.
+# makes a bad index recoverable without a rebuild: the previous version is still sitting in S3, so
+# rollback is a write to one SSM parameter plus a restart. The restart is what costs time, and in
+# prod it is a gated blue/green deployment — see docs/runbook.md §2.2.
 
 on:
   workflow_dispatch:
@@ -174,8 +175,8 @@ jobs:
       # quality without a single line of application code changing, so the same gate that guards
       # a service deploy guards an index promotion.
       #
-      # Deliberately not run on `rollback`: rolling back is the remedy, and making it wait for a
-      # gate that may itself be failing turns a 30-second recovery into an outage.
+      # Skipped on `rollback` because rolling back is the remedy. This only skips the workflow's
+      # own eval: prod's gate is a hook on the service, so it still judges the restart. Runbook 2.2.
       - name: Eval gate
         id: eval
         if: inputs.action == 'build-and-promote' || inputs.action == 'promote-existing'
