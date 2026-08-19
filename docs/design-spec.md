@@ -236,6 +236,13 @@ spend. The first is covered by the deployment machinery, and the other two matte
 level this service does not have. Cost is bounded instead by the account budget and by
 `max_output_tokens`.
 
+Alarms are not the whole notification story, because they only fire on metrics. A deployment
+reversed by the gate voting `FAILED`, or by the circuit breaker giving up on a task that never
+started, moves no metric at all — no traffic was ever served. Those are precisely the events worth
+telling someone about, so an EventBridge rule per environment matches ECS's own
+`SERVICE_DEPLOYMENT_FAILED` event and publishes it to the same topic. Without it, "production
+rolled itself back" was visible only to whoever happened to read the pipeline log.
+
 One logging decision earned its place: **the provider's error message is logged on the Bedrock
 failure path even though it never reaches the caller**. `ResourceNotFoundException` alone sent
 three separate investigations in the wrong direction. The message — *"Model use case details have
