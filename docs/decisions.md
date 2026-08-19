@@ -67,6 +67,12 @@ in place at deploy time** (destroys the previous index, so there is nothing to r
 **What it costs.** Old versions accumulate in S3 (lifecycle-expired after 90 days). The ingestion
 job needs its own IAM role, since it is the only principal permitted to write an index.
 
+Prod's index bucket also sets `force_destroy = false`, so `terraform destroy` on prod fails while
+the bucket still holds objects. That is intended: the corpus and every index are the one thing here
+that cannot be rebuilt from the repository. The cost is that prod teardown is a two-step manual
+job, and that `plan -destroy` looks clean because plan never inspects bucket contents. The
+procedure is in [runbook §5](runbook.md).
+
 ---
 
 ## 3. Rolling deploys in dev, gated blue/green in prod
