@@ -91,13 +91,13 @@ This is the core of the design.
         │                                 runs rag-ingest as a one-off ECS task
         ▼                                 writes s3://.../indexes/v<n>-<hash>/  (immutable)
  merge ──► release.yml                    writes SSM active_index_version
-   build once, tag, push to ECR           forces rolling restart
+   build once, tag, push to ECR           forces a new deployment
    Trivy scan, SBOM                       │
    reject a duplicate version             ▼
         │                              smoke + EVAL GATE
         ▼                                 │
  deploy.yml ──► resolve tag to DIGEST     ▼
-   terraform apply                     rollback: one pointer write
+   terraform apply                     rollback: pointer write, then redeploy
    rolling (dev) | gated blue/green (prod)
         │
         ▼
@@ -115,6 +115,13 @@ This is the core of the design.
 **Neither path can force the other to move.** A corpus fix does not require a service release; a
 service fix does not require an index rebuild. Two failure domains, two rollbacks, two runbook
 sections.
+
+**The index path is cheap to *decide* and not always cheap to *apply*.** Choosing a version is one
+SSM write. Making it take effect is a deployment, because the pointer is read at task startup — and
+in prod that deployment is the gated blue/green one, hook included. An index rollback there costs
+about ten minutes rather than the seconds the pointer write suggests, and there is a window where
+SSM names one version while the service still serves another. Measured numbers and the operational
+consequences are in [runbook §2.2](runbook.md).
 
 ### Build once, promote by digest
 
@@ -237,11 +244,14 @@ level this service does not have. Cost is bounded instead by the account budget 
 `max_output_tokens`.
 
 Alarms are not the whole notification story, because they only fire on metrics. A deployment
-reversed by the gate voting `FAILED`, or by the circuit breaker giving up on a task that never
-started, moves no metric at all — no traffic was ever served. Those are precisely the events worth
-telling someone about, so an EventBridge rule per environment matches ECS's own
-`SERVICE_DEPLOYMENT_FAILED` event and publishes it to the same topic. Without it, "production
-rolled itself back" was visible only to whoever happened to read the pipeline log.
+reversed by the gate voting `FAILED` moves no metric at all — no traffic was ever served. That is
+precisely the event worth telling someone about, so an EventBridge rule per environment matches
+ECS's own `SERVICE_DEPLOYMENT_FAILED` event and publishes it to the same topic. Without it,
+"production rolled itself back" was visible only to whoever happened to read the pipeline log.
+
+The circuit breaker is enabled in dev but is not what recovers it. At `desired_count = 1` it never
+fires, for reasons measured and written up in [decisions §3](decisions.md). Dev's rollback is the
+pipeline step; the breaker and the alarms are backstops.
 
 One logging decision earned its place: **the provider's error message is logged on the Bedrock
 failure path even though it never reaches the caller**. `ResourceNotFoundException` alone sent

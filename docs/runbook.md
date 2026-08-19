@@ -296,6 +296,33 @@ the index bucket is versioned, so `make deploy` rebuilds it:
 make destroy ENV=dev
 ```
 
+**Destroying prod is deliberately harder, and `plan -destroy` will not warn you.** The index store
+sets `force_destroy = var.environment != "prod"`, so prod's bucket refuses to be deleted while it
+still holds objects. `terraform plan -destroy` does not inspect bucket contents, so it exits 0 and
+lists every resource — then the apply fails on `BucketNotEmpty`. That is the guard working, not a
+bug: it is what stops an accidental `make destroy ENV=prod` from taking the corpus and every index
+with it.
+
+To decommission prod on purpose, empty the bucket first, including old versions, since versioning
+is on and delete markers alone will not satisfy the delete:
+
+```bash
+bucket="$(terraform -chdir=infra/envs/prod output -raw index_bucket)"
+
+aws s3api delete-objects --bucket "$bucket" \
+  --delete "$(aws s3api list-object-versions --bucket "$bucket" \
+    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json)"
+
+aws s3api delete-objects --bucket "$bucket" \
+  --delete "$(aws s3api list-object-versions --bucket "$bucket" \
+    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json)"
+
+make destroy ENV=prod
+```
+
+Take a copy of anything you want to keep before the first command. The indexes are rebuildable from
+the corpus, but the corpus is not rebuildable from anything in this repo beyond the sample file.
+
 A monthly budget alarm at $20 is created by `bootstrap.sh` and emails on 80% actual and 100%
 forecast. If it fires, check `bedrock.tokens` in the dashboard first — a runaway prompt is the only
 component here with an unbounded cost curve, which is why `max_output_tokens` is capped in config
