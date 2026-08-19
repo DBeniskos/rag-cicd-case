@@ -74,16 +74,25 @@ job needs its own IAM role, since it is the only principal permitted to write an
 | Strategy | `ROLLING` | `BLUE_GREEN` — both on the `ECS` controller |
 | Traffic shift | in place | none until the gate passes, then 100%, then 5 min bake |
 | Quality gate | after the deploy | **before any traffic moves** |
-| Rollback trigger | circuit breaker + alarms | gate verdict, then alarms |
+| Rollback trigger | pipeline redeploy; alarms and circuit breaker as backstops | gate verdict, then alarms |
 | Approval | none | GitHub environment reviewer |
 
 **Dev uses rolling updates.** Its purpose is fast feedback, and a second target group doubles ALB
-rules and cost for an environment where a minute of degradation is free. Rollback is still
-automatic and needs no pipeline step: the circuit breaker reverses a task set that never becomes
-healthy, and the deployment alarms reverse one that becomes healthy and then serves errors or runs
-slow. What dev cannot do is gate on answer quality *before* exposure — a rolling update replaces
-tasks in place, so there is no second endpoint to judge first. Its eval therefore runs after the
-deploy, which is acceptable precisely because dev is not where prod's safety comes from.
+rules and cost for an environment where a minute of degradation is free. What dev cannot do is gate
+on answer quality *before* exposure — a rolling update replaces tasks in place, so there is no
+second endpoint to judge first. Its eval therefore runs after the deploy, which is acceptable
+precisely because dev is not where prod's safety comes from.
+
+**Dev's rollback is the pipeline, not the circuit breaker, and that is a measured correction.** We
+forced a deployment with an unpullable image and the circuit breaker did not reverse it in thirty
+minutes, despite being enabled with `rollback = true`. The cause is visible in the service's own
+configuration: `minimumHealthyPercent = 100` means the old healthy task is never stopped,
+`resetOnHealthyTask` means the failure counter resets whenever a healthy task is observed, and the
+threshold is 50% of a desired count of one. The counter kept resetting against a task that was
+never going away. The service stayed up throughout — it fails safe — but it does not self-heal.
+What restores dev is `deploy.yml`'s rollback step, which redeploys the previous digest and repairs
+Terraform state. The circuit breaker and the alarms remain enabled as backstops; they are simply
+not the mechanism to rely on at one task.
 
 **Prod uses blue/green with a pre-shift quality gate.** ECS invokes a Lambda at
 `POST_TEST_TRAFFIC_SHIFT`: the new task set is live on the test listener and carries no production

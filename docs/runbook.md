@@ -71,16 +71,29 @@ old key stops working the moment the new tasks are serving.
 
 ### 1.1 Dev — rolling update
 
-The deployment circuit breaker restores the previous task set automatically if the new one never
-reaches a healthy state. If tasks are healthy but *behaving* badly, roll forward to the previous
-release explicitly:
+**Redeploy the previous release. Do not wait for the circuit breaker.**
 
 ```bash
 gh workflow run deploy.yml -f version=v0.5.0 -f environment=dev
 ```
 
 This is not a rebuild. `deploy.sh` resolves `v0.5.0` to the digest already in ECR, so the bytes
-that ran before are the bytes that run again.
+that ran before are the bytes that run again. `deploy.yml` also does this for you automatically
+when a deploy fails, which is dev's real rollback path.
+
+**Why not the circuit breaker.** It is enabled with `rollback = true`, but at `desired_count = 1`
+it rarely fires: `minimumHealthyPercent = 100` keeps the old healthy task running, and
+`resetOnHealthyTask` resets the failure counter every time that task is seen. A forced deployment
+with an unpullable image sat `IN_PROGRESS` for thirty minutes without reversing. Dev stayed up the
+whole time — the old task keeps serving — so this is a stuck deployment, not an outage. Treat the
+circuit breaker as a backstop and reach for the redeploy above.
+
+If a deployment is stuck this way and you want it cleared immediately:
+
+```bash
+aws ecs update-service --cluster rag-dev-cluster --service rag-dev-api \
+  --task-definition rag-dev-api:<previous-revision>
+```
 
 ### 1.2 Prod — gated blue/green
 
