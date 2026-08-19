@@ -12,7 +12,7 @@ resource "aws_lb" "this" {
   security_groups    = [var.alb_security_group_id]
 
   # An ALB rather than the NLB used previously: L7 gives per-request 5xx and latency metrics, and
-  # weighted target groups make canary shifting possible. Both are prerequisites for gating a
+  # weighted target groups make a traffic shift possible. Both are prerequisites for gating a
   # release on response quality rather than on whether the port answers.
   idle_timeout               = 65
   drop_invalid_header_fields = true

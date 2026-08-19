@@ -12,6 +12,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # Unused while dev is rolling, but the shared environment module declares it.
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7"
+    }
   }
 
   backend "s3" {
@@ -72,8 +77,10 @@ variable "docs_servers" {
   default     = "dev=http://rag-dev-alb-31414732.us-east-1.elb.amazonaws.com"
 }
 
-# Dev: rolling updates with the circuit breaker, one task, short log retention. Fast and cheap,
-# and the first place a bad release is caught.
+# Dev: rolling updates, one task, short log retention. Fast and cheap, and the first place a bad
+# release is caught. Rollback is automatic and needs no pipeline step: the circuit breaker reverses
+# a task set that never becomes healthy, and the alarms reverse one that becomes healthy and then
+# serves errors or runs slow.
 module "environment" {
   source = "../../modules/environment"
 

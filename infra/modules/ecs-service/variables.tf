@@ -83,31 +83,30 @@ variable "docs_servers" {
 
 variable "deployment_strategy" {
   description = <<-EOT
-    ROLLING    = in-place replacement guarded by the deployment circuit breaker (dev).
-    BLUE_GREEN = second task set, all traffic shifted at once, then baked (alarm rollback).
-    CANARY     = second task set, canary_percent shifted first and held, then the rest (prod).
-    This is the single switch that separates the strategies; everything else is identical,
-    which is what makes dev a genuine rehearsal for prod.
+    ROLLING    = in-place replacement, guarded by the circuit breaker and the alarms (dev).
+    BLUE_GREEN = second task set validated on the test listener, then all traffic at once (prod).
+    This is the single switch that separates the two; everything else is identical, which is what
+    makes dev a genuine rehearsal for prod.
   EOT
   type        = string
   default     = "ROLLING"
 
   validation {
-    condition     = contains(["ROLLING", "BLUE_GREEN", "CANARY"], var.deployment_strategy)
-    error_message = "deployment_strategy must be ROLLING, BLUE_GREEN or CANARY."
+    condition     = contains(["ROLLING", "BLUE_GREEN"], var.deployment_strategy)
+    error_message = "deployment_strategy must be ROLLING or BLUE_GREEN."
   }
 }
 
-variable "canary_percent" {
-  description = "Share of traffic the green task set receives before the bake period."
-  type        = number
-  default     = 10
+variable "gate_hook_target_arn" {
+  description = "Lambda ECS calls once the test listener is live, before production traffic moves. Empty disables the gate."
+  type        = string
+  default     = ""
 }
 
-variable "canary_bake_time_minutes" {
-  description = "How long the canary holds at canary_percent while the alarms gather evidence."
-  type        = number
-  default     = 5
+variable "gate_hook_role_arn" {
+  description = "Role ECS assumes to invoke the gate."
+  type        = string
+  default     = ""
 }
 
 variable "bake_time_minutes" {
@@ -117,7 +116,7 @@ variable "bake_time_minutes" {
 }
 
 variable "error_count_threshold" {
-  description = "5xx responses in one minute that abort a canary."
+  description = "5xx responses in one minute that fail a deployment."
   type        = number
   default     = 5
 }

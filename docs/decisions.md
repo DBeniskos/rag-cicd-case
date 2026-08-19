@@ -67,41 +67,57 @@ job needs its own IAM role, since it is the only principal permitted to write an
 
 ---
 
-## 3. Rolling deploys in dev, canary in prod
+## 3. Rolling deploys in dev, gated blue/green in prod
 
 | | dev | prod |
 | --- | --- | --- |
-| Strategy | `ROLLING` | `CANARY` — both on the `ECS` controller |
-| Traffic shift | in place | 10% canary → 5 min bake → 100%, then 5 min bake |
-| Rollback trigger | circuit breaker | alarm on the *new* target group |
+| Strategy | `ROLLING` | `BLUE_GREEN` — both on the `ECS` controller |
+| Traffic shift | in place | none until the gate passes, then 100%, then 5 min bake |
+| Quality gate | after the deploy | **before any traffic moves** |
+| Rollback trigger | circuit breaker + alarms | gate verdict, then alarms |
 | Approval | none | GitHub environment reviewer |
 
 **Dev uses rolling updates.** Its purpose is fast feedback, and a second target group doubles ALB
-rules and cost for an environment where a minute of degradation is free. The circuit breaker
-already covers the failure dev actually produces: a task that will not start.
+rules and cost for an environment where a minute of degradation is free. Rollback is still
+automatic and needs no pipeline step: the circuit breaker reverses a task set that never becomes
+healthy, and the deployment alarms reverse one that becomes healthy and then serves errors or runs
+slow. What dev cannot do is gate on answer quality *before* exposure — a rolling update replaces
+tasks in place, so there is no second endpoint to judge first. Its eval therefore runs after the
+deploy, which is acceptable precisely because dev is not where prod's safety comes from.
 
-**Prod uses a canary** because the circuit breaker cannot catch a task that *starts healthy and
-then serves badly* — the characteristic RAG failure, where the container is up, `/healthz` is
-green, and every answer is wrong. Alarms on the replacement target group catch that while only
-10% of traffic is exposed, and the previous task set stays alive for five minutes afterwards, so
-rollback is a traffic shift rather than a redeploy.
+**Prod uses blue/green with a pre-shift quality gate.** ECS invokes a Lambda at
+`POST_TEST_TRAFFIC_SHIFT`: the new task set is live on the test listener and carries no production
+traffic, the Lambda runs `eval/run_eval.py` against it, and returns `SUCCEEDED` or `FAILED`. A
+`FAILED` verdict makes ECS roll the deployment back instead of shifting traffic, so a release that
+answers badly reaches nobody. The bundle vendors the same harness, golden set and thresholds the
+pipeline uses, so the gate and CI can never disagree about what "good" means.
 
-**What it costs, and what we accept.** Two environments means prod's release *mechanism* is never
-rehearsed before it runs in prod: dev proves the application, not the canary. That is a real gap
-and we took it deliberately — a third environment costs a permanently running ALB and two Fargate
-tasks to rehearse a mechanism that already carries its own safety net in alarm-triggered
-auto-rollback and a five-minute window where reverting is instant. For a case study bounded by
-cost that is the right trade; for a programme with real users, stage comes back and the answer
-flips.
+**Why not a canary.** A canary trades blast radius for observation time, and is the right answer
+when correctness can *only* be judged from production traffic. That is not the case here, and the
+earlier canary made the mismatch obvious. Its alarms watched `HTTPCode_Target_5XX_Count` and
+`TargetResponseTime`, but the failure this service actually has is a confident, fluent, wrong
+answer returned as HTTP 200 — invisible to both. Worse, the service has no organic traffic, so the
+deployment had to generate the load its own alarms then measured: 10% of nothing produces no
+datapoints, and with `treat_missing_data = notBreaching` the canary could not fail. It measured a
+signal it manufactured, about a failure mode it could not see. A deterministic gate does not
+depend on traffic volume at all.
 
-**The limitation worth stating plainly.** A canary is only as good as the traffic it carries. This
-service has no real users, the alarms treat missing data as not breaching, and 10% of nothing
-produces no datapoints — so today the canary cannot fail on its own. The rollback path is proven
-(we triggered one and traffic left the new version in under two minutes), but the *detection* is
-not. Closing that needs load against the canary, and the version worth building is an ECS
-`lifecycle_hook` at `POST_TEST_TRAFFIC_SHIFT` that runs `eval/run_eval.py` against the test
-listener: it gates on answer quality rather than on 5xx and latency, which is the failure a RAG
-service actually has, and it does not depend on traffic volume at all.
+**What we still accept.** Two environments means prod's release *mechanism* is never rehearsed
+before it runs in prod: dev proves the application, not the shift. That is deliberate — a third
+environment costs a permanently running ALB and two Fargate tasks. Second, the test listener must
+be reachable from the internet, because the gate runs in Lambda and Lambda's egress address cannot
+be allowlisted; what bounds the exposure is that `:8080` serves the same application as `:80` and
+`/ask` rejects an unauthenticated caller on both, so only `/healthz` is readable and only while a
+deployment is in flight. Moving the gate inside the VPC would need a NAT gateway or a second
+internal load balancer, and neither is worth it here.
+
+**At real scale this changes.** With meaningful traffic the gate stops being sufficient on its own,
+because production reveals what no offline eval predicts — tail latency under concurrency, cache
+behaviour, Bedrock throttling. The answer there is canary *after* the gate, scored against the old
+task set as a control rather than against a fixed threshold, and on semantic metrics (abstention
+rate, retrieval score distribution, grounding rate) rather than 5xx and latency. The gate never
+becomes obsolete; it just stops being the whole story.
+
 
 ---
 

@@ -1,9 +1,9 @@
-# BLUE_GREEN and CANARY both run a second task set behind the alternate target group and shift
-# traffic by rewriting a listener rule; they differ only in whether the shift is all-at-once or
-# staged. Everything except the canary block itself is therefore shared, and only ROLLING replaces
-# tasks in place.
+# BLUE_GREEN runs a second task set behind the alternate target group, proves it on the test
+# listener, then moves traffic by rewriting a listener rule. ROLLING replaces tasks in place.
+# Everything except the shift itself is shared, so dev exercises the same module as prod.
 locals {
   traffic_shifting = var.deployment_strategy != "ROLLING"
+  gate_enabled     = var.gate_hook_target_arn != "" && var.gate_hook_role_arn != ""
 }
 
 resource "aws_ecs_cluster" "this" {
@@ -94,7 +94,7 @@ resource "aws_ecs_service" "api" {
     container_port   = var.container_port
 
     # What makes the shift possible: ECS needs the second target group and the rule it may
-    # rewrite. Supplying them is the whole difference between a rolling update and a canary.
+    # rewrite. Supplying them is the whole difference between a rolling update and blue/green.
     dynamic "advanced_configuration" {
       for_each = local.traffic_shifting ? [1] : []
 
@@ -117,37 +117,34 @@ resource "aws_ecs_service" "api" {
     strategy             = var.deployment_strategy
     bake_time_in_minutes = local.traffic_shifting ? tostring(var.bake_time_minutes) : null
 
-    # Only honoured when the strategy is literally CANARY. Under BLUE_GREEN the API accepts this
-    # block and ignores it, shifting 100% at once — a silent difference between what the config
-    # says and what the deployment does.
-    dynamic "canary_configuration" {
-      for_each = var.deployment_strategy == "CANARY" ? [1] : []
+    # The gate. At POST_TEST_TRAFFIC_SHIFT the new task set answers on the test listener and holds
+    # no production traffic, so the golden set can judge its answers while a rejection still costs
+    # nobody anything. A FAILED verdict makes ECS roll back instead of shifting.
+    dynamic "lifecycle_hook" {
+      for_each = local.gate_enabled ? [1] : []
 
       content {
-        canary_percent              = var.canary_percent
-        canary_bake_time_in_minutes = tostring(var.canary_bake_time_minutes)
+        hook_target_arn  = var.gate_hook_target_arn
+        role_arn         = var.gate_hook_role_arn
+        lifecycle_stages = ["POST_TEST_TRAFFIC_SHIFT"]
       }
     }
   }
 
-  # The one that matters: an alarm tripping mid-canary reverses the shift without a human.
-  dynamic "alarms" {
-    for_each = local.traffic_shifting ? [1] : []
-
-    content {
-      alarm_names = concat(
-        [for a in aws_cloudwatch_metric_alarm.target_5xx : a.alarm_name],
-        [for a in aws_cloudwatch_metric_alarm.latency_p95 : a.alarm_name],
-        [for a in aws_cloudwatch_metric_alarm.latency_p99 : a.alarm_name],
-      )
-      enable   = true
-      rollback = true
-    }
+  # Alarms cover what a health check cannot: a task set that starts cleanly and then serves badly.
+  # Both strategies get them, so a bad release is reversed in dev too rather than only in prod.
+  alarms {
+    alarm_names = concat(
+      [for a in aws_cloudwatch_metric_alarm.target_5xx : a.alarm_name],
+      [for a in aws_cloudwatch_metric_alarm.latency_p95 : a.alarm_name],
+      [for a in aws_cloudwatch_metric_alarm.latency_p99 : a.alarm_name],
+    )
+    enable   = true
+    rollback = true
   }
 
-  # The rolling rollback story: a task set that never reaches a healthy state is abandoned and the
-  # previous definition restored, with no human and no pipeline step involved. A canary needs the
-  # alarms above instead, because its failure mode is a task that starts healthy and serves badly.
+  # The other half of the rolling rollback story: a task set that never reaches a healthy state is
+  # abandoned and the previous definition restored, with no human and no pipeline step involved.
   dynamic "deployment_circuit_breaker" {
     for_each = var.deployment_strategy == "ROLLING" ? [1] : []
 

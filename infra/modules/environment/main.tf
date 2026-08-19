@@ -10,9 +10,16 @@ locals {
   name_prefix = "${var.project}-${var.environment}"
   account_id  = data.aws_caller_identity.current.account_id
 
+  staged_rollout = var.deployment_strategy != "ROLLING"
+
   # Built from the known role name rather than read from module.api, which would make the secret
   # depend on the service that consumes it and close a dependency cycle.
   execution_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-${var.environment}-task-execution"
+
+  # Same reason: the gate reads the key, and the secret names the roles that may read it.
+  gate_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${local.name_prefix}-deployment-gate"
+
+  secret_reader_arns = local.staged_rollout ? [local.execution_role_arn, local.gate_role_arn] : [local.execution_role_arn]
 }
 
 module "network" {
@@ -23,7 +30,7 @@ module "network" {
   container_port = var.container_port
   ingress_cidrs  = var.ingress_cidrs
 
-  test_listener_port = var.deployment_strategy != "ROLLING" ? 8080 : 0
+  test_listener_port = local.staged_rollout ? 8080 : 0
   test_ingress_cidrs = var.test_ingress_cidrs
 }
 
@@ -53,7 +60,25 @@ module "api_key_secret" {
 
   # Named explicitly, so the resource policy is a second independent grant rather than relying on
   # the execution role's own policy being the only control.
-  allowed_roles_arn = [local.execution_role_arn]
+  allowed_roles_arn = local.secret_reader_arns
+}
+
+# The release gate. It only exists where there is a test listener to validate: a rolling update
+# replaces tasks in place, so there is no second endpoint to judge before traffic reaches it.
+module "deployment_gate" {
+  count  = local.staged_rollout ? 1 : 0
+  source = "../deployment-gate"
+
+  name_prefix = local.name_prefix
+  environment = var.environment
+  account_id  = local.account_id
+
+  alb_name           = "${local.name_prefix}-alb"
+  test_port          = 8080
+  api_key_secret_arn = module.api_key_secret.arn
+
+  timeout_seconds    = var.gate_timeout_seconds
+  log_retention_days = var.log_retention_days
 }
 
 module "api" {
@@ -77,11 +102,12 @@ module "api" {
   release_version = var.release_version
   git_sha         = var.git_sha
 
-  deployment_strategy      = var.deployment_strategy
-  canary_percent           = var.canary_percent
-  canary_bake_time_minutes = var.canary_bake_time_minutes
-  bake_time_minutes        = var.bake_time_minutes
-  docs_servers             = var.docs_servers
+  deployment_strategy = var.deployment_strategy
+  bake_time_minutes   = var.bake_time_minutes
+  docs_servers        = var.docs_servers
+
+  gate_hook_target_arn = try(module.deployment_gate[0].function_arn, "")
+  gate_hook_role_arn   = try(module.deployment_gate[0].invoke_role_arn, "")
 
   error_count_threshold         = var.error_count_threshold
   latency_p95_threshold_seconds = var.latency_p95_threshold_seconds

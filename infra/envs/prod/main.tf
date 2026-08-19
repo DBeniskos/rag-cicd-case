@@ -10,6 +10,11 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # Packages the deployment gate's Lambda bundle.
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.7"
+    }
   }
 
   backend "s3" {
@@ -73,18 +78,19 @@ variable "docs_servers" {
 
 variable "test_ingress_cidrs" {
   description = <<-EOT
-    Who may reach the test listener on :8080. Empty means nobody, which is the right default: the
-    task set behind it is the release that has not yet earned any production traffic, and leaving
-    it open publishes every unvalidated build to the internet for the length of a deployment.
-    Open it deliberately and temporarily, e.g. -var 'test_ingress_cidrs=["203.0.113.4/32"]'.
+    Who may reach the test listener on :8080. The deployment gate calls it from Lambda, whose
+    egress address is not fixed and cannot be allowlisted, so this is open by default. What bounds
+    the exposure is the API key: :8080 serves the same application as :80 and /ask rejects an
+    unauthenticated caller on both. Only /healthz is readable, and only for the minutes a
+    deployment is in flight. Narrow it if the gate ever moves inside the VPC.
   EOT
   type        = list(string)
-  default     = []
+  default     = ["0.0.0.0/0"]
 }
 
-# Prod differs from dev only in retention, task count and deployment controller: same modules,
-# same inputs otherwise. The index store keeps force_destroy off, so a stray destroy cannot take
-# the corpus with it.
+# Prod differs from dev only in retention, task count and deployment strategy: same modules, same
+# inputs otherwise. The index store keeps force_destroy off, so a stray destroy cannot take the
+# corpus with it.
 module "environment" {
   source = "../../modules/environment"
 
@@ -99,9 +105,11 @@ module "environment" {
   active_index_version = var.active_index_version
 
   desired_count = 2
-  # CANARY rather than BLUE_GREEN: the latter shifts 100% the moment the new task set is healthy,
-  # which leaves the alarms nothing to observe before the blast radius is total.
-  deployment_strategy = "CANARY"
+  # Blue/green, not canary. A canary trades blast radius for observation time, and is worth it
+  # only when correctness can be judged solely from production traffic. Here it can be judged
+  # before any: the golden set runs against the new task set on the test listener and vetoes the
+  # shift, so a bad release reaches nobody rather than a tenth of everybody.
+  deployment_strategy = "BLUE_GREEN"
   test_ingress_cidrs  = var.test_ingress_cidrs
   docs_servers        = var.docs_servers
 
@@ -148,6 +156,10 @@ output "deployment_strategy" {
 
 output "test_url" {
   value = module.environment.test_url
+}
+
+output "gate_log_group_name" {
+  value = module.environment.gate_log_group_name
 }
 
 output "rollback_alarm_names" {

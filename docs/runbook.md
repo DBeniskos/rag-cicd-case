@@ -82,30 +82,44 @@ gh workflow run deploy.yml -f version=v0.5.0 -f environment=dev
 This is not a rebuild. `deploy.sh` resolves `v0.5.0` to the digest already in ECR, so the bytes
 that ran before are the bytes that run again.
 
-### 1.2 Prod — canary
+### 1.2 Prod — gated blue/green
 
-**If the deployment is still in progress,** the alarms attached to the service abort it
-automatically and shift traffic back to the original task set. To stop it immediately:
-
-```bash
-aws ecs stop-service-deployment \
-  --service-deployment-arn <arn> \
-  --stop-type ROLLBACK
-```
-
-Find `<arn>` with:
+**If the deployment is still in progress,** it may already be reversing itself. Check what stage it
+reached and what the gate said:
 
 ```bash
-aws ecs list-service-deployments \
-  --cluster rag-prod-cluster \
-  --service rag-prod-api \
-  --query 'serviceDeployments[?status==`IN_PROGRESS`].serviceDeploymentArn' \
-  --output text
+arn=$(aws ecs list-service-deployments \
+  --cluster rag-prod-cluster --service rag-prod-api \
+  --query 'serviceDeployments[0].serviceDeploymentArn' --output text)
+
+aws ecs describe-service-deployments --service-deployment-arns "$arn" \
+  --query 'serviceDeployments[0].[status,lifecycleStage,lifecycleHookDetails]'
 ```
 
-**If the deployment already completed,** re-run `deploy.yml` at the previous version. ECS performs
-a normal canary shift back, so recovery follows the same 10% canary and bake it would for any
-release.
+A hook status of `FAILED` at `POST_TEST_TRAFFIC_SHIFT` means the gate rejected the release and ECS
+is rolling back on its own — **no production traffic ever reached it**. The reason is in the gate's
+log, which names the failing cases:
+
+```bash
+aws logs tail /aws/lambda/rag-prod-deployment-gate --since 30m
+```
+
+To stop a deployment immediately rather than wait:
+
+```bash
+aws ecs stop-service-deployment --service-deployment-arn "$arn" --stop-type ROLLBACK
+```
+
+**If the deployment already completed,** re-run `deploy.yml` at the previous version. That is a
+normal blue/green release in the other direction: the old digest is staged, the gate judges it, and
+only then does traffic move. The gate passing is near-certain — it passed when that version shipped
+— but it is not skipped, because "roll back to something broken" is a real incident.
+
+**Terraform state after an automatic rollback.** When ECS reverses a deployment itself, the service
+returns to the previous release but Terraform still records the new one. `deploy.yml` handles this:
+its rollback step redeploys the previous version by digest, which makes state match what is
+actually serving. If that step also failed, run it by hand — otherwise the next plan shows no drift
+and quietly re-applies the bad image.
 
 ### 1.3 Verify
 

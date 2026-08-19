@@ -90,7 +90,7 @@ resource "aws_vpc_security_group_ingress_rule" "alb_test" {
   for_each = var.test_listener_port == 0 ? toset([]) : toset(var.test_ingress_cidrs)
 
   security_group_id = aws_security_group.alb.id
-  description       = "Blue/green test listener from ${each.value}"
+  description       = "Deployment gate test listener from ${each.value}"
   cidr_ipv4         = each.value
   from_port         = var.test_listener_port
   to_port           = var.test_listener_port

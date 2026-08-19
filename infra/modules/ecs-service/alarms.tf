@@ -1,26 +1,29 @@
-# Alarms that gate a canary.
+# Alarms that fail a deployment.
 #
-# Their job is to answer one question during a traffic shift — "is the new task set worse than the
-# old one?" — and to answer it fast enough to matter. Evaluation periods are therefore short and
-# thresholds tight. They exist only where a canary can consume them.
+# Their job is to answer one question during a release — "is the new task set worse than the old
+# one?" — and to answer it fast enough to matter. Evaluation periods are therefore short and
+# thresholds tight.
 #
-# One alarm per target group, not one per load balancer. Scoped to the ALB, a canary carrying 10%
-# of traffic is averaged against the 90% still on the old version: a p95 cannot see a task set that
-# is failing every request, because the 95th percentile sits inside the healthy majority. Which
-# group holds the canary alternates every release, so both are alarmed and both are registered —
-# ECS reverses the deployment if any named alarm fires.
+# One alarm per target group, not one per load balancer. Scoped to the ALB, a new task set is
+# averaged against the traffic still on the old version, and a p95 cannot see a task set failing
+# every request because the 95th percentile sits inside the healthy majority. Which group holds
+# the new release alternates every blue/green release, so both are alarmed and both are
+# registered. A rolling environment only ever uses blue, so alarming green there would create an
+# alarm that can never have data.
 locals {
   alarm_target_groups = local.traffic_shifting ? {
     blue  = aws_lb_target_group.blue.arn_suffix
     green = aws_lb_target_group.green.arn_suffix
-  } : {}
+    } : {
+    blue = aws_lb_target_group.blue.arn_suffix
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "target_5xx" {
   for_each = local.alarm_target_groups
 
   alarm_name          = "${var.name_prefix}-target-5xx-${each.key}"
-  alarm_description   = "Application errors from the ${each.key} task set. Trips a canary rollback."
+  alarm_description   = "Application errors from the ${each.key} task set. Fails the deployment and rolls it back."
   namespace           = "AWS/ApplicationELB"
   metric_name         = "HTTPCode_Target_5XX_Count"
   statistic           = "Sum"
@@ -28,7 +31,8 @@ resource "aws_cloudwatch_metric_alarm" "target_5xx" {
   threshold           = var.error_count_threshold
   period              = 60
   evaluation_periods  = 1
-  # A canary carries a fraction of traffic, so absent data means "no errors seen", not "unknown".
+  # A new task set carries a fraction of traffic, so absent data means "no errors seen", not
+  # "unknown". The gate, not these alarms, is what proves the release is actually good.
   treat_missing_data = "notBreaching"
 
   dimensions = {

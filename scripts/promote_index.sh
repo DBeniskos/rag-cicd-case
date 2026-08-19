@@ -79,8 +79,8 @@ if [ -n "$cluster" ] && [ -n "$service" ]; then
   aws ecs update-service --cluster "$cluster" --service "$service" \
     --force-new-deployment --no-cli-pager >/dev/null
 
-  # A pointer flip in prod goes through the same canary as a code release: it is a change to what
-  # the service answers with, which is exactly the kind of change the canary exists to stage.
+  # A pointer flip in prod goes through the same gated blue/green as a code release: it is a
+  # change to what the service answers with, which is exactly what the gate exists to judge.
   api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url 2>/dev/null || echo '')"
   bash "$REPO_ROOT/scripts/wait_for_deployment.sh" "$cluster" "$service" "$previous_deployment" "$api_url" \
     || die "service did not stabilise on $TARGET — roll back with --rollback"
