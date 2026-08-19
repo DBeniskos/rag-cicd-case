@@ -121,6 +121,12 @@ variable "error_count_threshold" {
   default     = 5
 }
 
+variable "alarm_topic_arn" {
+  description = "SNS topic the alarms publish to. Empty leaves them silent to humans; ECS still reads their state."
+  type        = string
+  default     = ""
+}
+
 variable "latency_p95_threshold_seconds" {
   type    = number
   default = 12

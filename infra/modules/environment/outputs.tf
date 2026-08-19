@@ -84,6 +84,11 @@ output "gate_log_group_name" {
   value       = try(module.deployment_gate[0].log_group_name, null)
 }
 
+output "alert_topic_arn" {
+  description = "Where the deployment alarms publish."
+  value       = aws_sns_topic.alerts.arn
+}
+
 output "ingest_task_family" {
   value = module.ingest.task_definition_family
 }

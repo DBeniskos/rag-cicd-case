@@ -88,6 +88,12 @@ variable "test_ingress_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "alert_email" {
+  description = "Optional subscriber for the alarm topic. Left empty by default so an apply does not send mail to an address nobody asked about."
+  type        = string
+  default     = ""
+}
+
 # Prod differs from dev only in retention, task count and deployment strategy: same modules, same
 # inputs otherwise. The index store keeps force_destroy off, so a stray destroy cannot take the
 # corpus with it.
@@ -112,6 +118,7 @@ module "environment" {
   deployment_strategy = "BLUE_GREEN"
   test_ingress_cidrs  = var.test_ingress_cidrs
   docs_servers        = var.docs_servers
+  alert_email         = var.alert_email
 
   log_retention_days   = 30
   index_retention_days = 90
@@ -160,6 +167,10 @@ output "test_url" {
 
 output "gate_log_group_name" {
   value = module.environment.gate_log_group_name
+}
+
+output "alert_topic_arn" {
+  value = module.environment.alert_topic_arn
 }
 
 output "rollback_alarm_names" {

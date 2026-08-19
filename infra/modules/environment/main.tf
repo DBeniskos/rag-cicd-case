@@ -34,6 +34,23 @@ module "network" {
   test_ingress_cidrs = var.test_ingress_cidrs
 }
 
+# Somewhere for an alarm to go. Without this the alarms still fail a deployment — ECS polls them
+# directly — but nobody is told that a release was reversed, which is how a rollback becomes a
+# surprise the next morning.
+resource "aws_sns_topic" "alerts" {
+  name = "${local.name_prefix}-alerts"
+}
+
+# AWS emails a confirmation link that has to be clicked; until then the subscription is pending
+# and delivers nothing.
+resource "aws_sns_topic_subscription" "alerts_email" {
+  count = var.alert_email == "" ? 0 : 1
+
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
 module "index_store" {
   source = "../index-store"
 
@@ -112,6 +129,7 @@ module "api" {
   error_count_threshold         = var.error_count_threshold
   latency_p95_threshold_seconds = var.latency_p95_threshold_seconds
   latency_p99_threshold_seconds = var.latency_p99_threshold_seconds
+  alarm_topic_arn               = aws_sns_topic.alerts.arn
 
   index_bucket_arn            = module.index_store.bucket_arn
   index_bucket_name           = module.index_store.bucket_name

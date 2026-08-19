@@ -215,8 +215,18 @@ Structured JSON logs (structlog) to CloudWatch, correlated by request id. Every 
 retrieval latency, generation latency, index version, model id, and **input and output token
 counts** — cost is observable per request rather than only on the monthly bill.
 
-Alarms: running task count at zero, ALB 5xx rate, p95 target response time, Bedrock throttle count,
-and a token-spend threshold. The first four page; the last one is a budget signal.
+Alarms: 5xx count, p95 and p99 target response time, one set per target group so a new task set is
+measured on its own traffic rather than averaged into the old one's. They serve two consumers.
+ECS reads their state directly and reverses a deployment that trips one — that is the automatic
+rollback, and it needs no topic. They also publish to a per-environment SNS topic
+(`rag-{env}-alerts`) on both `ALARM` and `OK`, so a rollback is something a human is told about
+rather than something they discover from a version string the next morning. The topic is created
+with no subscriber; `-var alert_email=...` adds one, and AWS requires the address to confirm.
+
+What is deliberately not alarmed: running task count at zero, Bedrock throttle count and token
+spend. The first is covered by the deployment machinery, and the other two matter at a traffic
+level this service does not have. Cost is bounded instead by the account budget and by
+`max_output_tokens`.
 
 One logging decision earned its place: **the provider's error message is logged on the Bedrock
 failure path even though it never reaches the caller**. `ResourceNotFoundException` alone sent

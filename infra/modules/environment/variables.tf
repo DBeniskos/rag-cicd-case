@@ -151,6 +151,12 @@ variable "bake_time_minutes" {
   default     = 5
 }
 
+variable "alert_email" {
+  description = "Address subscribed to the environment's alarm topic. Empty means the topic exists but has no subscriber, which is still better than alarms with nowhere to publish."
+  type        = string
+  default     = ""
+}
+
 variable "gate_timeout_seconds" {
   description = "Budget for the whole golden set inside the deployment gate."
   type        = number
