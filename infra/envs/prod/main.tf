@@ -92,6 +92,7 @@ variable "alert_email" {
   description = "Optional subscriber for the alarm topic. Left empty by default so an apply does not send mail to an address nobody asked about."
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 # Prod differs from dev only in retention, task count and deployment strategy: same modules, same

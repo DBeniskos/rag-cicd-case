@@ -81,6 +81,7 @@ variable "alert_email" {
   description = "Optional subscriber for the alarm topic. Left empty by default so an apply does not send mail to an address nobody asked about."
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 # Dev: rolling updates, one task, short log retention. Fast and cheap, and the first place a bad
