@@ -33,7 +33,9 @@ size. Cost is rounding error.
 
 **What it costs.** It does not scale past one node's disk and memory; the ceiling is roughly low
 millions of vectors. Every task holds a full copy. Index freshness is bounded by task restart, so
-promotion forces a rolling restart rather than being instant.
+promotion forces a restart rather than being instant — and in prod that restart is a gated
+blue/green deployment, not a rolling one, so an index rollback there costs minutes rather than
+seconds. Runbook §2.2 gives the real numbers.
 
 **Revisit when** the corpus exceeds ~1M chunks or sub-minute freshness is required. The migration
 target is OpenSearch behind the same module boundary — `retrieval.py` is the seam.

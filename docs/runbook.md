@@ -170,14 +170,33 @@ manifest summary.
 make rollback-index ENV=$ENV
 ```
 
-Writes the previous version to `/rag/<env>/active_index_version` and forces a rolling restart so
-running tasks reload. Recovery time is task restart time — typically under two minutes. The bad
-index is not deleted; it stays in S3 for diagnosis.
+Writes the previous version to `/rag/<env>/active_index_version` and forces a new deployment, because
+the pointer is read at task startup. The bad index is not deleted; it stays in S3 for diagnosis.
 
 Equivalent from the pipeline: `index.yml`, action `rollback`.
 
-> The eval gate deliberately does **not** run on `rollback`. Rolling back is the remedy; making it
-> wait for a gate that may itself be failing turns a two-minute recovery into an outage.
+**How long this takes depends on the environment, and prod is not fast.**
+
+| | dev | prod |
+| --- | --- | --- |
+| Restart | rolling, in place | gated blue/green |
+| Gate | none | **runs** — the lifecycle hook is on the service |
+| Recovery | task restart, under two minutes | roughly ten minutes including bake |
+
+`index.yml` skips its *own* eval step on `rollback`, and that is all it skips. Prod's gate is an ECS
+lifecycle hook attached to the service, so it judges every deployment of that service — including
+the restart this command triggers. There is no per-deployment opt-out, and adding one would mean a
+pointer flip could reach production unjudged, which is the thing the gate exists to prevent.
+
+> **If the gate rejects the rollback,** ECS keeps the old task set, and those tasks already have the
+> bad index loaded in memory. SSM will then name the good index while the service still serves the
+> bad one. Trust `/healthz` `index_version` over the SSM parameter — it reports what the process
+> actually loaded. Recover by fixing what the gate is failing on, not by flipping the pointer again.
+
+> **`--rollback` is a single-step undo, not "go to the last known good".** It flips to the most
+> recent value in parameter history that differs from the current one, so running it twice returns
+> you to where you started. To reach a specific version, name it: `make promote-index ENV=$ENV
+> VERSION=v1-abc1234`. `make index-status ENV=$ENV` prints the history.
 
 ### 2.3 `503 index_unavailable`
 
