@@ -37,17 +37,17 @@ output "production_listener_arn" {
 }
 
 output "test_listener_arn" {
-  description = "Only created for blue/green environments."
+  description = "Only created where a second task set is staged before the shift."
   value       = try(aws_lb_listener.test[0].arn, null)
 }
 
 output "rollback_alarm_names" {
-  description = "The alarms that reverse a canary. Empty where the strategy is rolling."
-  value = local.traffic_shifting ? concat(
+  description = "The alarms that reverse a deployment."
+  value = concat(
     [for a in aws_cloudwatch_metric_alarm.target_5xx : a.alarm_name],
     [for a in aws_cloudwatch_metric_alarm.latency_p95 : a.alarm_name],
     [for a in aws_cloudwatch_metric_alarm.latency_p99 : a.alarm_name],
-  ) : []
+  )
 }
 
 output "log_group_name" {

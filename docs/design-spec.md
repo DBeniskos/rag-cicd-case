@@ -98,7 +98,12 @@ This is the core of the design.
         ▼                                 │
  deploy.yml ──► resolve tag to DIGEST     ▼
    terraform apply                     rollback: one pointer write
-   rolling (dev) | canary (prod)
+   rolling (dev) | gated blue/green (prod)
+        │
+        ▼
+ prod only: EVAL GATE before traffic moves
+   ECS lifecycle hook @ POST_TEST_TRAFFIC_SHIFT
+   FAILED ⇒ roll back, nobody served
         │
         ▼
  smoke + EVAL GATE

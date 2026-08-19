@@ -22,13 +22,13 @@ variable "ingress_cidrs" {
 }
 
 variable "test_listener_port" {
-  description = "Blue/green validation port. 0 means the environment has no test listener."
+  description = "Validation port for a staged rollout. 0 means the environment has no test listener."
   type        = number
   default     = 0
 }
 
 variable "test_ingress_cidrs" {
-  description = "Sources allowed to reach the test listener. Empty by default: the task set behind it has passed no canary, and a release nobody has validated should not be reachable from the internet."
+  description = "Sources allowed to reach the test listener. The deployment gate calls it from Lambda, whose egress address cannot be pinned, so a gated environment opens it and relies on the API key /ask already requires."
   type        = list(string)
   default     = []
 }

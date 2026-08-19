@@ -100,14 +100,13 @@ jobs:
           echo "::add-mask::$key"
           echo "RAG_API_KEY=$key" >> "$GITHUB_ENV"
 
-      # smoke.sh already proved the right *bytes* are serving. This proves the right *answers*
-      # are. A release can pass every unit test, deploy cleanly and still degrade retrieval —
-      # a prompt change or an embedding-model bump does exactly that — so the gate runs against
-      # the live environment rather than an in-process app.
+      # In prod this has already run once, inside the deployment: ECS invoked the gate Lambda at
+      # POST_TEST_TRAFFIC_SHIFT, against the new task set on the test listener, and would have
+      # rolled back rather than shift traffic if it failed. Running it again here is confirmation
+      # against the production listener, and the artifact reviewers actually read.
       #
-      # It runs after traffic has shifted, which is a deliberate trade. Gating a rolling update
-      # before the shift is not possible without a second endpoint, so dev catches the regression;
-      # in prod the canary alarms bound the exposure and rollback (docs/runbook.md) is the remedy.
+      # In dev it is the only run. A rolling update replaces tasks in place, so there is no second
+      # endpoint to judge first — which is exactly why dev is not where prod's safety comes from.
       - name: Eval gate
         id: eval
         shell: bash
@@ -131,12 +130,31 @@ jobs:
           path: eval-report.json
           if-no-files-found: ignore
 
+      # Rollback is a step, not a paragraph in a runbook.
+      #
+      # It also repairs state. When ECS reverses a deployment itself — the gate voting FAILED, an
+      # alarm firing, the circuit breaker tripping — the service returns to the previous release
+      # but Terraform still records the new one, so the next plan would show no drift and quietly
+      # re-apply the bad image. Redeploying the previous version by digest makes the state match
+      # what is actually serving.
+      - name: Roll back
+        if: failure() && steps.deploy.outputs.previous_release != '' && steps.deploy.outputs.previous_release != 'none'
+        shell: bash
+        env:
+          ENV: ${{ inputs.environment }}
+          VERSION: ${{ steps.deploy.outputs.previous_release }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          echo "::warning::rolling ${ENV} back to ${VERSION}"
+          bash scripts/deploy.sh
+
       - name: Summarise
         if: always()
         shell: bash
         env:
           ENV: ${{ inputs.environment }}
           VERSION: ${{ inputs.version }}
+          PREVIOUS: ${{ steps.deploy.outputs.previous_release }}
         run: |
           {
             echo "### Deploy \`${VERSION}\` → \`${ENV}\`"
@@ -145,9 +163,11 @@ jobs:
             echo "| --- | --- |"
             echo "| result | ${{ job.status }} |"
             echo "| url | ${{ steps.deploy.outputs.api_url }} |"
+            echo "| replaced | \`${PREVIOUS:-unknown}\` |"
             echo ""
             if [ "${{ job.status }}" != "success" ]; then
-              echo "Roll back with: \`deploy.yml\` at the previous version, or"
-              echo "\`index.yml\` action \`rollback\` if the eval gate failed on retrieval."
+              echo "Rolled back to \`${PREVIOUS}\` automatically. If that step also failed, run"
+              echo "\`deploy.yml\` at \`${PREVIOUS}\`, or \`index.yml\` action \`rollback\` if the"
+              echo "eval gate failed on retrieval rather than on the code."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

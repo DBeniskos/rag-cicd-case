@@ -15,7 +15,7 @@ Three things ship independently, and each has its own build, deploy and rollback
 
 | Component | What it is | Artifact | Rollback |
 | --- | --- | --- | --- |
-| `rag-api` | FastAPI service — retrieves context, calls Bedrock, answers | container image digest | blue/green traffic shift back (prod) / circuit breaker (dev) |
+| `rag-api` | FastAPI service — retrieves context, calls Bedrock, answers | container image digest | gate vetoes the shift, or traffic shifts back (prod) / circuit breaker + alarms (dev) |
 | `rag-ingest` | one-off ECS task — chunks + embeds the corpus | container image digest | re-run previous release |
 | **the index** | LanceDB dataset on S3 under an immutable version prefix | `indexes/v{N}-{gitsha}/` | flip an SSM pointer back — seconds, no rebuild |
 
@@ -44,11 +44,11 @@ index gets the same release discipline the code gets.
  │                                                                 │
  │  ┌── rag-dev-* ───────────────┐   ┌── rag-prod-* ─────────────┐  │
  │  │ own VPC / ALB / ECS / S3   │   │ own VPC / ALB / ECS / S3  │  │
- │  │ rolling + circuit breaker  │   │ ECS canary, two task sets │  │
- │  │ SSM /rag/dev/*             │   │ canary 10%/5m → 100%      │  │
- │  │ auto-rollback on failure   │   │ SSM /rag/prod/*           │  │
- │  └────────────────────────────┘   │ alarm-based auto-rollback │  │
- │                                   └───────────────────────────┘  │
+ │  │ rolling, in place          │   │ blue/green, two task sets │  │
+ │  │ SSM /rag/dev/*             │   │ EVAL GATE before traffic  │  │
+ │  │ circuit breaker + alarms   │   │ SSM /rag/prod/*           │  │
+ │  │ auto-rollback on failure   │   │ gate + alarm auto-rollback│  │
+ │  └───────────────────────────┘   └──────────────────────────┘  │
  └─────────────────────────────────────────────────────────────────┘
             │                                   │
             └──────────► Amazon Bedrock ◀───────┘

@@ -5,12 +5,14 @@
 #
 # Shared because deploy.sh and promote_index.sh both start a deployment and both need the same
 # answer. `aws ecs wait services-stable` cannot give it, for two reasons: its budget is a fixed
-# 10 minutes, which is shorter than a canary release, and a deployment the alarms reversed reaches
+# 10 minutes, which is shorter than a gated release, and a deployment the alarms reversed reaches
 # a steady state exactly like one that succeeded.
 #
-# The output is deliberately verbose. A canary is minutes of silence otherwise, and "the release
-# looked hung so I cancelled it" is a real incident. Every traffic shift is printed when it
-# happens and repeated as a table in the job summary, so the log is the audit trail.
+# The output is deliberately verbose where something is actually happening. A staged rollout is
+# minutes of silence otherwise, and "the release looked hung so I cancelled it" is a real
+# incident: every lifecycle stage, gate verdict and traffic shift is printed when it happens and
+# repeated as a table in the job summary. A rolling update has none of that machinery, so it
+# reports only its status rather than columns that would always read the same.
 set -euo pipefail
 
 CLUSTER="${1:-}"
@@ -19,9 +21,9 @@ PREVIOUS="${3:-none}"
 BASE_URL="${4:-}"
 TEST_URL="${5:-}"
 TIMEOUT="${DEPLOY_TIMEOUT_SECONDS:-3600}"
-# Enough requests per poll that a 60-second alarm period has a population to work with. A canary
-# carrying 10% of nothing produces no datapoints, and alarms that cannot fire are decoration.
-LOAD="${CANARY_LOAD_REQUESTS:-25}"
+# Enough requests per poll that a 60-second alarm period has a population to work with. Alarms
+# that cannot fire are decoration.
+LOAD="${DEPLOY_LOAD_REQUESTS:-25}"
 
 die() { printf 'wait: %s\n' "$*" >&2; exit 1; }
 
@@ -32,13 +34,18 @@ BASE_URL="${BASE_URL%/}"
 TEST_URL="${TEST_URL%/}"
 TIMELINE="$(mktemp)"
 
-# Reproduced into the job summary so the traffic shifts survive after the log scrolls away.
+# A test listener is what distinguishes the two strategies, so it is also what decides how much of
+# this script is worth running.
+STAGED=0
+[ -n "$TEST_URL" ] && STAGED=1
+
+# Reproduced into the job summary so the shifts survive after the log scrolls away.
 emit_summary() {
   [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
   [ -s "$TIMELINE" ] || return 0
   {
-    printf '\n#### Traffic timeline\n\n'
-    if [ -n "$TEST_URL" ]; then
+    printf '\n#### Deployment timeline\n\n'
+    if [ "$STAGED" = 1 ]; then
       printf '| elapsed | event | live (:80) | test listener (:8080) |\n| --- | --- | --- | --- |\n'
     else
       printf '| elapsed | event | live |\n| --- | --- | --- |\n'
@@ -51,7 +58,7 @@ trap emit_summary EXIT
 
 # Resolved once: the listener rule is what ECS rewrites to move traffic, so its weights are the
 # only honest answer to "how much of production is on the new version right now". taskSets is not
-# usable here — ECS reports it as null for the CANARY strategy even mid-deployment.
+# usable here — ECS reports it as null even mid-deployment.
 resolve_alb() {
   local tg_arn lb_arn
   tg_arn="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
@@ -96,8 +103,8 @@ release_at() {
 }
 
 # Load exists so the alarms have a population to evaluate. /healthz costs nothing and touches
-# neither retrieval nor Bedrock, which also means a release that breaks /ask while /healthz stays
-# green will not be caught here — see docs/decisions.md.
+# neither retrieval nor Bedrock, which is also why it cannot judge answer quality — that is the
+# deployment gate's job, and the alarms only cover errors and latency.
 generate_load() {
   [ -n "$BASE_URL" ] || return 0
   local i
@@ -107,11 +114,23 @@ generate_load() {
   wait
 }
 
-resolve_alb || printf 'wait: could not resolve the load balancer; traffic weights will not be reported\n'
+# Where ECS thinks it is, and what the gate said. Both come from the deployment itself rather than
+# being inferred, so the log says "the gate rejected this" instead of "it rolled back, unclear why".
+describe() {
+  aws ecs describe-service-deployments --service-deployment-arns "$1" \
+    --query 'serviceDeployments[0].[lifecycleStage,join(`/`,lifecycleHookDetails[].status) || `none`]' \
+    --output text 2>/dev/null || printf -- '-\t-'
+}
+
+if [ "$STAGED" = 1 ]; then
+  resolve_alb || printf 'wait: could not resolve the load balancer; traffic weights will not be reported\n'
+fi
 
 deadline=$(( $(date +%s) + TIMEOUT ))
 started=$(date +%s)
 last_weights=""
+last_stage=""
+last_hook=""
 
 while :; do
   read -r deployment status <<EOF
@@ -126,50 +145,69 @@ EOF
   fi
 
   elapsed=$(( $(date +%s) - started ))
-  now="$(weights)"
   live="$(release_at "$BASE_URL")"
 
-  # Only meaningful where a second task set exists; a rolling update has no test listener, and
-  # printing an always-empty column makes it look like it does.
-  canary_col=""
-  canary_cell=""
-  if [ -n "$TEST_URL" ]; then
-    canary_col="  test=$(release_at "$TEST_URL")"
-    canary_cell=" \`$(release_at "$TEST_URL")\` |"
-  fi
+  if [ "$STAGED" = 1 ]; then
+    now="$(weights)"
+    test_release="$(release_at "$TEST_URL")"
+    detail="  $now   live=$live  test=$test_release"
+    cell=" \`$test_release\` |"
 
-  # Only transitions are worth reporting; the polls between them are noise. The first reading is
-  # the state we started from rather than a shift — calling it one makes a rolling update, which
-  # never moves traffic between target groups at all, look like it has canary machinery.
-  if [ "$now" != "$last_weights" ]; then
-    if [ -z "$last_weights" ]; then
-      event="baseline"
+    if [ "$status" != "REGISTERING" ]; then
+      read -r stage hook <<EOF
+$(describe "$deployment")
+EOF
     else
-      event="TRAFFIC SHIFT"
+      stage="-" hook="-"
     fi
-    printf 'wait: >>> [%4ds] %-13s %s   live=%s%s\n' "$elapsed" "$event" "$now" "$live" "$canary_col"
-    printf '| %ds | %s → %s | `%s` |%s\n' "$elapsed" "$event" "$now" "$live" "$canary_cell" >> "$TIMELINE"
-    last_weights="$now"
+
+    # The gate is the decision point, so it is called out by name rather than left as one more
+    # stage. POST_TEST_TRAFFIC_SHIFT is where the golden set runs against the new task set.
+    if [ "$stage" != "$last_stage" ] && [ "$stage" != "-" ]; then
+      printf 'wait: >>> [%4ds] %-22s %s\n' "$elapsed" "$stage" "$detail"
+      printf '| %ds | stage `%s` | `%s` |%s\n' "$elapsed" "$stage" "$live" "$cell" >> "$TIMELINE"
+      last_stage="$stage"
+    fi
+
+    if [ "$hook" != "$last_hook" ] && [ "$hook" != "-" ] && [ "$hook" != "none" ]; then
+      printf 'wait: >>> [%4ds] GATE %-17s %s\n' "$elapsed" "$hook" "$detail"
+      printf '| %ds | **gate %s** | `%s` |%s\n' "$elapsed" "$hook" "$live" "$cell" >> "$TIMELINE"
+      last_hook="$hook"
+    fi
+
+    # Only transitions are worth reporting; the polls between them are noise. The first reading is
+    # the state we started from rather than a shift.
+    if [ "$now" != "$last_weights" ]; then
+      if [ -z "$last_weights" ]; then event="baseline"; else event="TRAFFIC SHIFT"; fi
+      printf 'wait: >>> [%4ds] %-22s %s\n' "$elapsed" "$event" "$detail"
+      printf '| %ds | %s → %s | `%s` |%s\n' "$elapsed" "$event" "$now" "$live" "$cell" >> "$TIMELINE"
+      last_weights="$now"
+    fi
+  else
+    # A rolling update never moves traffic between target groups and runs no hooks, so weights and
+    # a test column would be constants. Status and the live release are the whole story.
+    detail="  live=$live"
+    cell=""
   fi
 
   case "$status" in
     SUCCESSFUL)
-      printf 'wait: [%4ds] SUCCEEDED     %s   live=%s\n' "$elapsed" "$now" "$live"
-      printf '| %ds | **deployment succeeded** | `%s` |%s\n' "$elapsed" "$live" "$canary_cell" >> "$TIMELINE"
+      printf 'wait: [%4ds] SUCCEEDED %s\n' "$elapsed" "$detail"
+      printf '| %ds | **deployment succeeded** | `%s` |%s\n' "$elapsed" "$live" "$cell" >> "$TIMELINE"
       exit 0
       ;;
     ROLLBACK_SUCCESSFUL | ROLLBACK_IN_PROGRESS)
-      printf 'wait: [%4ds] ROLLING BACK  %s   live=%s\n' "$elapsed" "$now" "$live"
-      printf '| %ds | **ROLLED BACK** (%s) | `%s` |%s\n' "$elapsed" "$status" "$live" "$canary_cell" >> "$TIMELINE"
+      printf 'wait: [%4ds] ROLLING BACK %s\n' "$elapsed" "$detail"
+      printf '| %ds | **ROLLED BACK** (%s) | `%s` |%s\n' "$elapsed" "$status" "$live" "$cell" >> "$TIMELINE"
       die "ECS is reversing this deployment ($status) — the previous version is what is serving"
       ;;
     ROLLBACK_FAILED | STOPPED | STOP_REQUESTED)
-      printf '| %ds | **%s** | `%s` |%s\n' "$elapsed" "$status" "$live" "$canary_cell" >> "$TIMELINE"
+      printf '| %ds | **%s** | `%s` |%s\n' "$elapsed" "$status" "$live" "$cell" >> "$TIMELINE"
       die "deployment ended as $status"
       ;;
   esac
 
-  printf 'wait: [%4ds] %-12s  %s   live=%s%s\n' "$elapsed" "$status" "$now" "$live" "$canary_col"
+  printf 'wait: [%4ds] %-12s %s\n' "$elapsed" "$status" "$detail"
 
   [ "$(date +%s)" -lt "$deadline" ] || die "deployment still $status after ${TIMEOUT}s"
 

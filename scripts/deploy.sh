@@ -58,6 +58,16 @@ previous_deployment="$(aws ecs list-service-deployments \
   --service "$(terraform -chdir="$ENV_DIR" output -raw service_name 2>/dev/null || echo missing)" \
   --query 'serviceDeployments[0].serviceDeploymentArn' --output text 2>/dev/null || echo none)"
 
+# Also read before the apply: the version currently serving is the rollback target, and after the
+# apply nothing records it. Asking the service beats reading the state file, because it reports
+# what is actually answering rather than what Terraform last intended.
+previous_url="$(terraform -chdir="$ENV_DIR" output -raw api_url 2>/dev/null || echo '')"
+previous_release="$(curl -fsS --max-time 10 "${previous_url%/}/healthz" 2>/dev/null \
+  | sed -n 's/.*"release"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+[ -n "$previous_release" ] || previous_release="none"
+printf 'deploy: replacing %s\n' "$previous_release"
+[ -z "${GITHUB_OUTPUT:-}" ] || printf 'previous_release=%s\n' "$previous_release" >> "$GITHUB_OUTPUT"
+
 terraform -chdir="$ENV_DIR" apply -input=false -auto-approve \
   -var "image=$api_image" \
   -var "ingest_image=$ingest_image" \
@@ -72,12 +82,11 @@ service="$(terraform -chdir="$ENV_DIR" output -raw service_name)"
 test_url="$(terraform -chdir="$ENV_DIR" output -raw test_url 2>/dev/null || echo '')"
 
 # Both strategies are driven by ECS itself, so the apply above already started the release. The
-# difference is what ECS does with it: a rolling replacement guarded by the circuit breaker, or a
-# staged shift onto a second task set that alarms can reverse.
+# difference is what ECS does with it, and what has to go wrong before it is reversed.
 if [ "$strategy" = "ROLLING" ]; then
-  printf 'deploy: rolling update with circuit breaker\n'
+  printf 'deploy: rolling update — circuit breaker and alarms reverse it automatically\n'
 else
-  printf 'deploy: %s — shift onto a second task set, bake, then retire the old one\n' "$strategy"
+  printf 'deploy: blue/green — the gate judges the new task set on %s before any traffic moves\n' "$test_url"
 fi
 
 bash "$REPO_ROOT/scripts/wait_for_deployment.sh" \
@@ -86,3 +95,4 @@ bash "$REPO_ROOT/scripts/wait_for_deployment.sh" \
 bash "$REPO_ROOT/scripts/smoke.sh" "$api_url" "$VERSION"
 
 printf 'deploy: %s is serving %s at %s\n' "$ENV_PATH" "$VERSION" "$api_url"
+printf 'deploy: to undo this, redeploy %s\n' "$previous_release"

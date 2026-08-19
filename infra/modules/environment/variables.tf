@@ -29,7 +29,7 @@ variable "ingress_cidrs" {
 }
 
 variable "test_ingress_cidrs" {
-  description = "Sources allowed to reach the blue/green test listener. Empty by default; supply an operator or CI range to open it."
+  description = "Sources allowed to reach the test listener. The deployment gate calls it from Lambda, whose egress address cannot be pinned, so a gated environment has to allow the internet and rely on the API key /ask already requires."
   type        = list(string)
   default     = []
 }
@@ -86,7 +86,7 @@ variable "desired_count" {
 }
 
 variable "deployment_strategy" {
-  description = "ROLLING (circuit breaker), BLUE_GREEN (shift all at once) or CANARY (staged shift)."
+  description = "ROLLING (in-place, circuit breaker and alarms) or BLUE_GREEN (second task set, gated, then shifted)."
   type        = string
   default     = "ROLLING"
 }
@@ -145,32 +145,26 @@ variable "docs_servers" {
   default     = ""
 }
 
-variable "canary_percent" {
-  description = "Share of traffic the green task set receives before the bake period."
-  type        = number
-  default     = 10
-}
-
-variable "canary_bake_time_minutes" {
-  description = "How long the canary holds while the alarms gather evidence."
-  type        = number
-  default     = 5
-}
-
 variable "bake_time_minutes" {
   description = "How long an instant rollback stays possible after a successful shift."
   type        = number
   default     = 5
 }
 
+variable "gate_timeout_seconds" {
+  description = "Budget for the whole golden set inside the deployment gate."
+  type        = number
+  default     = 300
+}
+
 variable "error_count_threshold" {
-  description = "5xx responses in one minute that abort a canary."
+  description = "5xx responses in one minute that fail a deployment."
   type        = number
   default     = 5
 }
 
 variable "latency_p95_threshold_seconds" {
-  description = "Canary latency budget. Bedrock generation dominates it."
+  description = "Deployment latency budget. Bedrock generation dominates it."
   type        = number
   default     = 12
 }

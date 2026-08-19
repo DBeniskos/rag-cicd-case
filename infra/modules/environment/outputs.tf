@@ -62,16 +62,26 @@ output "deployment_strategy" {
   value       = var.deployment_strategy
 }
 
-# During a shift this answers from the new task set while api_url still answers from the old one,
-# which is the only way to compare the two versions side by side before traffic moves.
+# During a shift this answers from the new task set while api_url still answers from the old one.
+# It is where the gate runs, and the only way to compare the two versions before traffic moves.
 output "test_url" {
   description = "Staged-rollout validation endpoint. Null where the strategy is rolling."
-  value       = var.deployment_strategy != "ROLLING" ? "http://${module.api.alb_dns_name}:8080" : null
+  value       = local.staged_rollout ? "http://${module.api.alb_dns_name}:8080" : null
 }
 
 output "rollback_alarm_names" {
-  description = "The alarms that reverse a canary. Empty where the strategy is rolling."
+  description = "The alarms that reverse a deployment."
   value       = module.api.rollback_alarm_names
+}
+
+output "gate_function_name" {
+  description = "Deployment gate. Null where the strategy is rolling."
+  value       = try(module.deployment_gate[0].function_name, null)
+}
+
+output "gate_log_group_name" {
+  description = "Where the gate records its verdict and the cases that failed."
+  value       = try(module.deployment_gate[0].log_group_name, null)
 }
 
 output "ingest_task_family" {
