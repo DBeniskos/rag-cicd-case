@@ -226,10 +226,13 @@ data "aws_iam_policy_document" "deployment" {
     actions   = ["iam:PassRole"]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-*"]
 
+    # Named services rather than a wildcard, so the grant has to be widened deliberately when a
+    # new kind of resource appears. lambda is here for the deployment gate; codedeploy was dropped
+    # when the blue/green shift moved onto the ECS controller.
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com", "codedeploy.amazonaws.com"]
+      values   = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com", "lambda.amazonaws.com"]
     }
   }
 
