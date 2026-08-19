@@ -496,6 +496,33 @@ required check name does not change when an environment is added.
 
 Both `deploy.yml` and `index.yml` use GitHub environments, so a `prod` run pauses for approval.
 
+### Branch protection
+
+`main` is protected. You cannot push to it directly, and a pull request cannot be merged until CI
+is green. These are the settings on the repository:
+
+| Rule | Setting | What it prevents |
+| --- | --- | --- |
+| Required status checks | `app · lint, test, image`, `infra · gate`, `security · codeql` | Merging anything that fails tests, linting, the image scan, a Terraform plan or CodeQL |
+| Branch must be up to date | on | Merging code that was only ever tested against an older `main` |
+| Direct pushes to `main` | blocked | Skipping review and CI entirely |
+| Force pushes | blocked | Rewriting history |
+| Branch deletion | blocked | Losing `main` |
+| Linear history | required | Merge commits, so history stays readable |
+| Conversation resolution | required | Merging with review comments still open |
+| Applies to admins | **yes** | The repository owner bypassing their own rules |
+
+Only `infra · gate` is required rather than the three individual plan jobs. The per environment
+plan jobs come from a matrix, so their names change whenever an environment is added, which would
+quietly break the required check list. The gate job waits for all three and has a stable name.
+
+No approving review is required, because GitHub does not let you approve your own pull request and
+this is a single maintainer repository. On a team this becomes one approval plus CODEOWNERS.
+
+The repository is public, so anyone can fork it and open a pull request. Nobody but the owner can
+push a branch or merge one. A pull request from a fork runs with a read only token and no access to
+repository secrets.
+
 ---
 
 ## 10. Scripts

@@ -53,3 +53,6 @@ Thumbs.db
 
 # Case brief, kept locally rather than committed.
 DevOps_Infra_Level_Instructions.pdf
+
+# Presentation material about the solution
+presentation/

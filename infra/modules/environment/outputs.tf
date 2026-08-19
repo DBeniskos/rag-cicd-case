@@ -33,30 +33,6 @@ output "active_index_parameter_name" {
   value = module.index_store.active_index_parameter_name
 }
 
-output "blue_target_group_name" {
-  value = module.api.blue_target_group_name
-}
-
-output "green_target_group_name" {
-  value = module.api.green_target_group_name
-}
-
-output "production_listener_arn" {
-  value = module.api.production_listener_arn
-}
-
-output "test_listener_arn" {
-  value = module.api.test_listener_arn
-}
-
-output "alb_arn_suffix" {
-  value = module.api.alb_arn_suffix
-}
-
-output "log_group_name" {
-  value = module.api.log_group_name
-}
-
 output "deployment_strategy" {
   description = "Tells deploy.sh and the runbook which release mechanism this environment uses."
   value       = var.deployment_strategy
