@@ -582,3 +582,18 @@ data/raw/            The 15 document sample corpus
 Makefile             Shortcuts over the scripts
 ```
 
+## 14. A note on AI assistance
+
+This project was built with the help of an AI coding agent, using the latest Claude models. The
+idea, the architecture and the structure are mine. I decided what to build, how to split it, which
+trade-offs to accept and what "done" had to mean. The agent helped me write and test it faster.
+
+It was most useful for the repetitive parts: writing Terraform modules that follow a pattern I had
+already chosen, generating test cases, and running the chaos tests that proved the rollback paths
+work. Several real defects came out of that process, including a quality gate that could never
+fail, alarm topics with no subscriber, and a documented recovery time that was wrong by a factor of
+five. Those were found by testing the system rather than by reading the code.
+
+Every design decision in `docs/decisions.md` is mine, and I can defend all of them. The AI wrote a
+lot of the words and a lot of the HCL. It did not decide what this should be.
+
