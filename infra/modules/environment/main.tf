@@ -51,6 +51,61 @@ resource "aws_sns_topic_subscription" "alerts_email" {
   endpoint  = var.alert_email
 }
 
+# CloudWatch could publish here on the default policy; EventBridge cannot. Setting a policy at all
+# replaces the default, so the owner statement has to be restated or the account loses the ability
+# to manage its own topic — including the subscription Terraform just created.
+data "aws_iam_policy_document" "alerts" {
+  statement {
+    sid    = "OwnerManagesTopic"
+    effect = "Allow"
+    actions = [
+      "SNS:GetTopicAttributes",
+      "SNS:SetTopicAttributes",
+      "SNS:AddPermission",
+      "SNS:RemovePermission",
+      "SNS:DeleteTopic",
+      "SNS:Subscribe",
+      "SNS:ListSubscriptionsByTopic",
+      "SNS:Publish",
+    ]
+    resources = [aws_sns_topic.alerts.arn]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceOwner"
+      values   = [local.account_id]
+    }
+  }
+
+  statement {
+    sid       = "AlarmsAndDeploymentEventsPublish"
+    effect    = "Allow"
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.alerts.arn]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com", "events.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceAccount"
+      values   = [local.account_id]
+    }
+  }
+}
+
+resource "aws_sns_topic_policy" "alerts" {
+  arn    = aws_sns_topic.alerts.arn
+  policy = data.aws_iam_policy_document.alerts.json
+}
+
 module "index_store" {
   source = "../index-store"
 
