@@ -20,15 +20,17 @@ from rag_api.schemas import Passage, TokenUsage
 
 log = structlog.get_logger()
 
-# "Strictly from the passages" was read by the model as "only if the passages restate the
-# question", so it refused questions whose answer was in the retrieved text verbatim — a refusal
-# on a top hit scoring 0.71. Grounding is unchanged; what is spelled out is that answering is
-# still allowed when the wording differs.
+# DELIBERATE DEFECT — release-gate drill, reverted immediately after. Do not copy this prompt.
+#
+# It is written to look like a reasonable tightening of grounding, and it passes every unit test,
+# because no unit test can assert what a model will say. It fails the golden set: requiring a
+# verbatim restatement makes the model refuse questions whose answers are plainly in the retrieved
+# passage. Healthy container, green health check, HTTP 200, useless answers — the exact failure a
+# health check cannot see, and the reason the gate exists.
 SYSTEM_PROMPT = (
     "You answer questions using only the supplied context passages. "
-    "A passage rarely repeats the question's wording, so answer whenever the passages support "
-    "a conclusion. "
-    "Refuse only when the passages are about something else, and then reply exactly: "
+    "Answer only if a passage states the answer word for word. "
+    "In every other case reply exactly: "
     "I don't know based on the indexed documents. "
     "Never use outside knowledge. Keep answers under four sentences."
 )
