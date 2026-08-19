@@ -77,6 +77,12 @@ variable "docs_servers" {
   default     = "dev=http://rag-dev-alb-31414732.us-east-1.elb.amazonaws.com"
 }
 
+variable "alert_email" {
+  description = "Optional subscriber for the alarm topic. Left empty by default so an apply does not send mail to an address nobody asked about."
+  type        = string
+  default     = ""
+}
+
 # Dev: rolling updates, one task, short log retention. Fast and cheap, and the first place a bad
 # release is caught. Rollback is automatic and needs no pipeline step: the circuit breaker reverses
 # a task set that never becomes healthy, and the alarms reverse one that becomes healthy and then
@@ -97,6 +103,7 @@ module "environment" {
   desired_count       = 1
   deployment_strategy = "ROLLING"
   docs_servers        = var.docs_servers
+  alert_email         = var.alert_email
 
   log_retention_days   = 7
   index_retention_days = 14
@@ -145,6 +152,10 @@ output "test_url" {
 
 output "rollback_alarm_names" {
   value = module.environment.rollback_alarm_names
+}
+
+output "alert_topic_arn" {
+  value = module.environment.alert_topic_arn
 }
 
 output "ingest_task_family" {

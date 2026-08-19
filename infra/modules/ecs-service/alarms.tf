@@ -17,6 +17,10 @@ locals {
     } : {
     blue = aws_lb_target_group.blue.arn_suffix
   }
+
+  # ok_actions as well as alarm_actions: "it recovered" is the half of an incident people
+  # otherwise have to guess at.
+  alarm_actions = var.alarm_topic_arn == "" ? [] : [var.alarm_topic_arn]
 }
 
 resource "aws_cloudwatch_metric_alarm" "target_5xx" {
@@ -34,6 +38,9 @@ resource "aws_cloudwatch_metric_alarm" "target_5xx" {
   # A new task set carries a fraction of traffic, so absent data means "no errors seen", not
   # "unknown". The gate, not these alarms, is what proves the release is actually good.
   treat_missing_data = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
 
   dimensions = {
     LoadBalancer = aws_lb.this.arn_suffix
@@ -54,6 +61,9 @@ resource "aws_cloudwatch_metric_alarm" "latency_p95" {
   period              = 60
   evaluation_periods  = 2
   treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
 
   dimensions = {
     LoadBalancer = aws_lb.this.arn_suffix
@@ -76,6 +86,9 @@ resource "aws_cloudwatch_metric_alarm" "latency_p99" {
   period              = 60
   evaluation_periods  = 2
   treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
 
   dimensions = {
     LoadBalancer = aws_lb.this.arn_suffix

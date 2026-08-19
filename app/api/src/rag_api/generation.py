@@ -20,9 +20,15 @@ from rag_api.schemas import Passage, TokenUsage
 
 log = structlog.get_logger()
 
+# "Strictly from the passages" was read by the model as "only if the passages restate the
+# question", so it refused questions whose answer was in the retrieved text verbatim — a refusal
+# on a top hit scoring 0.71. Grounding is unchanged; what is spelled out is that answering is
+# still allowed when the wording differs.
 SYSTEM_PROMPT = (
-    "You answer questions strictly from the supplied context passages. "
-    "If the passages do not contain the answer, reply exactly: "
+    "You answer questions using only the supplied context passages. "
+    "A passage rarely repeats the question's wording, so answer whenever the passages support "
+    "a conclusion. "
+    "Refuse only when the passages are about something else, and then reply exactly: "
     "I don't know based on the indexed documents. "
     "Never use outside knowledge. Keep answers under four sentences."
 )
