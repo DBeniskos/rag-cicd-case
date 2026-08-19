@@ -81,8 +81,11 @@ if [ -n "$cluster" ] && [ -n "$service" ]; then
 
   # A pointer flip in prod goes through the same gated blue/green as a code release: it is a
   # change to what the service answers with, which is exactly what the gate exists to judge.
+  # test_url has to be passed for the wait to report the stages and the gate's verdict; without it
+  # an index promotion is watched as though it were a rolling update.
   api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url 2>/dev/null || echo '')"
-  bash "$REPO_ROOT/scripts/wait_for_deployment.sh" "$cluster" "$service" "$previous_deployment" "$api_url" \
+  test_url="$(terraform -chdir="$ENV_DIR" output -raw test_url 2>/dev/null || echo '')"
+  bash "$REPO_ROOT/scripts/wait_for_deployment.sh" "$cluster" "$service" "$previous_deployment" "$api_url" "$test_url" \
     || die "service did not stabilise on $TARGET — roll back with --rollback"
 
   printf 'promote: %s is serving index %s\n' "$service" "$TARGET"
