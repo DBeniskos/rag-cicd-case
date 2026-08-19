@@ -20,7 +20,6 @@ SERVICE="${2:-}"
 PREVIOUS="${3:-none}"
 BASE_URL="${4:-}"
 TEST_URL="${5:-}"
-TIMEOUT="${DEPLOY_TIMEOUT_SECONDS:-3600}"
 # Enough requests per poll that a 60-second alarm period has a population to work with. Alarms
 # that cannot fire are decoration.
 LOAD="${DEPLOY_LOAD_REQUESTS:-25}"
@@ -38,6 +37,15 @@ TIMELINE="$(mktemp)"
 # this script is worth running.
 STAGED=0
 [ -n "$TEST_URL" ] && STAGED=1
+
+# A staged rollout has to outlast the gate and two bake windows. A rolling one has nothing to wait
+# for beyond a task starting, so an hour there is an hour of a pipeline looking alive while ECS
+# retries an image that will never pull — and the rollback step cannot run until this gives up.
+if [ "$STAGED" = 1 ]; then
+  TIMEOUT="${DEPLOY_TIMEOUT_SECONDS:-3600}"
+else
+  TIMEOUT="${DEPLOY_TIMEOUT_SECONDS:-600}"
+fi
 
 # Reproduced into the job summary so the shifts survive after the log scrolls away.
 emit_summary() {
