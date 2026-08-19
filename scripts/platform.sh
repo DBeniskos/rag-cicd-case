@@ -106,6 +106,14 @@ With the GitHub CLI:
   gh variable set ECR_REGISTRY         --body "$registry"
   gh variable set TF_STATE_BUCKET      --body "$state_bucket"
 
+Optionally, an address to receive alarm notifications. Without it the alarm topics exist and are
+published to, but have no subscriber, so a rollback is never announced to anyone:
+
+  gh variable set ALERT_EMAIL          --body "you@example.com"
+
+AWS emails a confirmation link on the next deploy; the subscription delivers nothing until it is
+clicked.
+
 Also create the GitHub environments 'dev' and 'prod' (Settings -> Environments). The deploy role
 trusts the environment claim, so deploys fail closed until they exist — and 'prod' is where the
 manual approval gate is configured.

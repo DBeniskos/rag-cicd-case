@@ -68,11 +68,15 @@ previous_release="$(curl -fsS --max-time 10 "${previous_url%/}/healthz" 2>/dev/n
 printf 'deploy: replacing %s\n' "$previous_release"
 [ -z "${GITHUB_OUTPUT:-}" ] || printf 'previous_release=%s\n' "$previous_release" >> "$GITHUB_OUTPUT"
 
+# Passed on every apply, not just the one that set it. Terraform reconciles to the config it is
+# given, so omitting it here would delete the alarm subscription on the next deploy — alerting
+# that switches itself off after one release is worse than none, because nobody notices.
 terraform -chdir="$ENV_DIR" apply -input=false -auto-approve \
   -var "image=$api_image" \
   -var "ingest_image=$ingest_image" \
   -var "release_version=$VERSION" \
-  -var "git_sha=$git_sha"
+  -var "git_sha=$git_sha" \
+  -var "alert_email=${ALERT_EMAIL:-}"
 
 strategy="$(terraform -chdir="$ENV_DIR" output -raw deployment_strategy)"
 api_url="$(terraform -chdir="$ENV_DIR" output -raw api_url)"

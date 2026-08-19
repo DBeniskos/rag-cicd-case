@@ -78,6 +78,9 @@ jobs:
           ENV: ${{ inputs.environment }}
           VERSION: ${{ inputs.version }}
           AWS_REGION: ${{ vars.AWS_REGION }}
+          # A repository variable rather than a committed value: it is somebody's address, and
+          # this repo is public. Unset means the topic keeps no subscriber.
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
         run: |
           bash scripts/deploy.sh
           api_url="$(terraform -chdir="infra/envs/${ENV}" output -raw api_url)"
@@ -144,6 +147,7 @@ jobs:
           ENV: ${{ inputs.environment }}
           VERSION: ${{ steps.deploy.outputs.previous_release }}
           AWS_REGION: ${{ vars.AWS_REGION }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
         run: |
           echo "::warning::rolling ${ENV} back to ${VERSION}"
           bash scripts/deploy.sh
